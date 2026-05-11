@@ -16,7 +16,7 @@ export default function LoginForm() {
     setError(null);
 
     const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithPassword({
+    const { data, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -25,6 +25,13 @@ export default function LoginForm() {
       setError(authError.message);
       setLoading(false);
       return;
+    }
+
+    // Set cookies so the Astro middleware sees the authenticated session
+    if (data.session) {
+      const { access_token, refresh_token } = data.session;
+      document.cookie = `sb-access-token=${access_token}; path=/; max-age=86400; SameSite=Lax`;
+      document.cookie = `sb-refresh-token=${refresh_token}; path=/; max-age=86400; SameSite=Lax`;
     }
 
     window.location.href = redirect || '/dashboard/connections';
