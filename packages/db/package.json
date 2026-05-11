@@ -5,7 +5,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "node -e \"try{require('drizzle-orm/sqlite-core')}catch(e){console.log('skipping db build (no deps)');process.exit(0)}\" && tsc",
+    "build": "node scripts/build.mjs",
     "clean": "rm -rf dist",
     "lint": "eslint src/",
     "db:generate": "drizzle-kit generate",
