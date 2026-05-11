@@ -2,10 +2,6 @@
   "name": "wago",
   "private": true,
   "scripts": {
-    "build": "turbo run build",
-    "dev": "turbo run dev",
-    "lint": "turbo run lint",
-    "clean": "turbo run clean",
     "db:migrate": "pnpm --filter @wago/db db:migrate:run",
     "db:generate": "pnpm --filter @wago/db db:generate",
     "db:push": "pnpm --filter @wago/db db:push",
