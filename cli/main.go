@@ -1,6 +1,6 @@
 package main
 
-import "github.com/dhruvyad/wago/cli/cmd"
+import "github.com/juah3h32/wago/cli/cmd"
 
 // Set via ldflags: -ldflags="-X main.version=0.2.0"
 var version = "dev"

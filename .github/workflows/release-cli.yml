@@ -80,35 +80,35 @@ jobs:
           SHA_LINUX_ARM64=$(shasum -a 256 artifacts/wago-linux-arm64 | cut -d' ' -f1)
 
           # Clone tap repo
-          git clone https://x-access-token:${GH_TOKEN}@github.com/dhruvyad/homebrew-tap.git /tmp/tap
+          git clone https://x-access-token:${GH_TOKEN}@github.com/juah3h32/homebrew-tap.git /tmp/tap
           cd /tmp/tap
 
           # Generate updated formula
           cat > Formula/wago.rb << FORMULA
           class Wahooks < Formula
             desc "CLI for Wago — manage WhatsApp connections, webhooks, and messaging"
-            homepage "https://github.com/dhruvyad/wago"
+            homepage "https://github.com/juah3h32/wago"
             version "${VERSION}"
             license "MIT"
 
             on_macos do
               on_arm do
-                url "https://github.com/dhruvyad/wago/releases/download/cli-v#{version}/wago-darwin-arm64"
+                url "https://github.com/juah3h32/wago/releases/download/cli-v#{version}/wago-darwin-arm64"
                 sha256 "${SHA_DARWIN_ARM64}"
               end
               on_intel do
-                url "https://github.com/dhruvyad/wago/releases/download/cli-v#{version}/wago-darwin-amd64"
+                url "https://github.com/juah3h32/wago/releases/download/cli-v#{version}/wago-darwin-amd64"
                 sha256 "${SHA_DARWIN_AMD64}"
               end
             end
 
             on_linux do
               on_arm do
-                url "https://github.com/dhruvyad/wago/releases/download/cli-v#{version}/wago-linux-arm64"
+                url "https://github.com/juah3h32/wago/releases/download/cli-v#{version}/wago-linux-arm64"
                 sha256 "${SHA_LINUX_ARM64}"
               end
               on_intel do
-                url "https://github.com/dhruvyad/wago/releases/download/cli-v#{version}/wago-linux-amd64"
+                url "https://github.com/juah3h32/wago/releases/download/cli-v#{version}/wago-linux-amd64"
                 sha256 "${SHA_LINUX_AMD64}"
               end
             end

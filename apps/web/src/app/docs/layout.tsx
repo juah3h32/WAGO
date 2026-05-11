@@ -15,7 +15,7 @@ export default function DocsRootLayout({ children }: { children: ReactNode }) {
         ),
         url: '/docs',
       }}
-      githubUrl="https://github.com/dhruvyad/wago"
+      githubUrl="https://github.com/juah3h32/wago"
     >
       {children}
     </DocsLayout>

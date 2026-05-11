@@ -6,7 +6,7 @@ import { Tab, Tabs } from 'fumadocs-ui/components/tabs';
 import { Step, Steps } from 'fumadocs-ui/components/steps';
 import { MarkdownCopyButton, ViewOptionsPopover } from 'fumadocs-ui/layouts/docs/page';
 
-const REPO = 'https://github.com/dhruvyad/wago';
+const REPO = 'https://github.com/juah3h32/wago';
 const CONTENT_PATH = 'apps/web/content/docs';
 
 export default async function Page(props: {
@@ -27,7 +27,7 @@ export default async function Page(props: {
       toc={page.data.toc}
       full={page.data.full}
       editOnGithub={{
-        owner: 'dhruvyad',
+        owner: 'juah3h32',
         repo: 'wago',
         sha: 'main',
         path: `${CONTENT_PATH}/${filePath}`,

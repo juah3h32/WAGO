@@ -51,8 +51,8 @@ export default function RootLayout({
               url: "https://wago.com",
               logo: "https://wago.com/icon-512.png",
               sameAs: [
-                "https://github.com/dhruvyad/wago",
-                "https://x.com/dhruvyad",
+                "https://github.com/juah3h32/wago",
+                "https://x.com/juah3h32",
                 "https://discord.gg/B2XNf97Vby",
               ],
               description:

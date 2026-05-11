@@ -7,7 +7,7 @@ const config = {
     return [
       {
         source: '/install',
-        destination: 'https://raw.githubusercontent.com/dhruvyad/wago/main/cli/install.sh',
+        destination: 'https://raw.githubusercontent.com/juah3h32/wago/main/cli/install.sh',
         permanent: false,
       },
     ];

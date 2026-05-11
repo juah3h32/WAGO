@@ -14,20 +14,20 @@
   <a href="https://www.npmjs.com/package/@wago/sdk"><img src="https://img.shields.io/npm/v/@wago/sdk.svg" alt="npm version"></a>
   <a href="https://pypi.org/project/wago/"><img src="https://img.shields.io/pypi/v/wago.svg" alt="PyPI version"></a>
   <a href="https://discord.gg/B2XNf97Vby"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://x.com/dhruvyad"><img src="https://img.shields.io/twitter/follow/dhruvyad?style=social" alt="Twitter"></a>
+  <a href="https://x.com/juah3h32"><img src="https://img.shields.io/twitter/follow/juah3h32?style=social" alt="Twitter"></a>
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="License"></a>
-  <a href="https://github.com/dhruvyad/wago/actions"><img src="https://img.shields.io/github/actions/workflow/status/dhruvyad/wago/deploy-api.yml?branch=main&label=CI" alt="CI"></a>
-  <a href="https://deepwiki.com/dhruvyad/wago"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a href="https://github.com/juah3h32/wago/actions"><img src="https://img.shields.io/github/actions/workflow/status/juah3h32/wago/deploy-api.yml?branch=main&label=CI" alt="CI"></a>
+  <a href="https://deepwiki.com/juah3h32/wago"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
 </p>
 
 <p align="center">
   <a href="https://wago.com/docs">Documentation</a> &middot;
   <a href="https://wago.com/signup">Get Started</a> &middot;
   <a href="https://discord.gg/B2XNf97Vby">Discord</a> &middot;
-  <a href="https://x.com/dhruvyad">Twitter</a>
+  <a href="https://x.com/juah3h32">Twitter</a>
 </p>
 
 ---
@@ -220,7 +220,7 @@ Full API documentation: [wago.com/docs](https://wago.com/docs)
 ### Local Development
 
 ```bash
-git clone https://github.com/dhruvyad/wago.git
+git clone https://github.com/juah3h32/wago.git
 cd wago
 
 pnpm install

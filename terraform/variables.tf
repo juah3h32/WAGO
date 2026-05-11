@@ -90,6 +90,6 @@ variable "frontend_url" {
 
 variable "api_image" {
   type        = string
-  default     = "ghcr.io/dhruvyad/wago/api:latest"
+  default     = "ghcr.io/juah3h32/wago/api:latest"
   description = "API container image (updated by CI/CD)"
 }

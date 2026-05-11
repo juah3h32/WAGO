@@ -4,7 +4,7 @@ const https = require("https");
 const path = require("path");
 const os = require("os");
 
-const REPO = "dhruvyad/wago";
+const REPO = "juah3h32/wago";
 const BIN_DIR = path.join(__dirname, "bin");
 const BIN_PATH = path.join(BIN_DIR, process.platform === "win32" ? "wago.exe" : "wago");
 
@@ -65,7 +65,7 @@ async function install() {
   }
 
   if (!cliRelease) {
-    throw new Error("No CLI release found. Please install from source: https://github.com/dhruvyad/wago/tree/main/cli");
+    throw new Error("No CLI release found. Please install from source: https://github.com/juah3h32/wago/tree/main/cli");
   }
 
   const asset = cliRelease.assets.find((a) => a.name === assetName);

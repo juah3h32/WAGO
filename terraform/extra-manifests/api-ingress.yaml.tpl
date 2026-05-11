@@ -5,7 +5,7 @@ metadata:
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: dhruvyadav@berkeley.edu
+    email: juah3h32av@berkeley.edu
     privateKeySecretRef:
       name: letsencrypt-prod-account-key
     solvers:

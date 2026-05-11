@@ -15,4 +15,4 @@ dependencies = ["httpx>=0.24.0"]
 realtime = ["websocket-client>=1.6.0"]
 
 [project.urls]
-Repository = "https://github.com/dhruvyad/wago"
+Repository = "https://github.com/juah3h32/wago"

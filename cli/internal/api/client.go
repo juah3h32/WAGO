@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/dhruvyad/wago/cli/internal/style"
+	"github.com/juah3h32/wago/cli/internal/style"
 	"github.com/fatih/color"
 )
 

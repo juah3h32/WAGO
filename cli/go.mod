@@ -1,4 +1,4 @@
-module github.com/dhruvyad/wago/cli
+module github.com/juah3h32/wago/cli
 
 go 1.25.0
 

@@ -115,7 +115,7 @@ cert-manager with Let's Encrypt HTTP-01 solver via Traefik. The `api-ingress.yam
 | `stripe_webhook_secret` | No | `""` | Stripe webhook secret |
 | `api_url` | No | `https://api.wago.com` | Public API URL |
 | `frontend_url` | No | `https://wago.com` | Public frontend URL |
-| `api_image` | No | `ghcr.io/dhruvyad/wago/api:latest` | API container image |
+| `api_image` | No | `ghcr.io/juah3h32/wago/api:latest` | API container image |
 
 ## CI/CD
 

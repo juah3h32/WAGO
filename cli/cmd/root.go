@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/dhruvyad/wago/cli/internal/api"
-	"github.com/dhruvyad/wago/cli/internal/auth"
-	"github.com/dhruvyad/wago/cli/internal/config"
+	"github.com/juah3h32/wago/cli/internal/api"
+	"github.com/juah3h32/wago/cli/internal/auth"
+	"github.com/juah3h32/wago/cli/internal/config"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
