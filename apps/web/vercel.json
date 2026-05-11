@@ -1,5 +1,4 @@
 {
-  "framework": "nextjs",
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm turbo run build --filter=@wago/web"
+  "buildCommand": "pnpm --filter @wago/shared-types build && next build"
 }
