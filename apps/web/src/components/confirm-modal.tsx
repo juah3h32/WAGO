@@ -25,8 +25,12 @@ const ConfirmContext = createContext<ConfirmContextValue | null>(null);
 
 export function useConfirm() {
   const ctx = useContext(ConfirmContext);
-  if (!ctx)
-    throw new Error("useConfirm must be used within ConfirmModalProvider");
+  if (!ctx) {
+    if (typeof window !== 'undefined') {
+      console.warn('useConfirm must be used within ConfirmModalProvider');
+    }
+    return { confirm: async () => true };
+  }
   return ctx;
 }
 

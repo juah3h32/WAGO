@@ -23,7 +23,13 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 export function useToast() {
   const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error("useToast must be used within ToastProvider");
+  // During SSR or if provider is missing, return no-op to avoid crash
+  if (!ctx) {
+    if (typeof window !== 'undefined') {
+      console.warn('useToast must be used within ToastProvider');
+    }
+    return { toast: () => {} };
+  }
   return ctx;
 }
 
