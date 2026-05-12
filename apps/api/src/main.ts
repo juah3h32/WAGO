@@ -12,7 +12,11 @@ async function bootstrap() {
   app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
   const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
   app.enableCors({
-    origin: [frontendUrl, "http://localhost:3000"],
+    origin: [
+      frontendUrl,
+      "http://localhost:3000",
+      /\.vercel\.app$/,
+    ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
