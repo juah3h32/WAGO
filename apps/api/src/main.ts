@@ -20,8 +20,16 @@ async function bootstrap() {
       /\.vercel\.app$/,
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+    ],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
   app.setGlobalPrefix("api");
   app.useWebSocketAdapter(new WsAdapter(app));
