@@ -138,7 +138,6 @@ export class ConnectionsController {
     @CurrentUser() user: { sub: string },
     @Body() body?: { name?: string },
   ) {
-    // WAHA limits session names to 54 chars; use short hex IDs
     const shortUserId = user.sub.replace(/-/g, '').slice(0, 12);
     const shortSessionId = randomBytes(6).toString('hex');
     const sessionName = `u_${shortUserId}_s_${shortSessionId}`;
@@ -154,45 +153,42 @@ export class ConnectionsController {
       })
       .returning();
 
-    try {
-      // Timeout worker provisioning at 15s — if it takes longer,
-      // the connection stays pending and the health service will assign it.
-      const worker = await Promise.race([
-        this.workersService.findOrProvisionWorker(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Worker provisioning timeout')), 15000),
-        ),
-      ]);
-      await this.workersService.assignSession(worker.id, created.id);
-      const apiUrl = this.configService.get<string>(
-        'API_URL',
-        'http://localhost:3001',
-      );
-      const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
-      const wahaName = this.wahaService.resolveSessionName(sessionName);
-
-      // In WAHA Core, the "default" session always exists and cannot be deleted.
-      // Use resetSession which does stop → create(start:true) with fresh config.
-      await this.wahaService.resetSession(
-        worker.internalIp,
-        worker.apiKey,
-        wahaName,
-        webhookUrl,
-      );
-
-      const [updated] = await this.db
-        .update(wahaSessions)
-        .set({ status: 'scan_qr', updatedAt: new Date() })
-        .where(eq(wahaSessions.id, created.id))
-        .returning();
-
-      return this.mapConnection(updated);
-    } catch (error) {
+    // Do worker setup + WAHA session creation in background.
+    // The frontend polls QR immediately; health check handles failures.
+    this.setupWorkerAndSession(created.id, sessionName).catch((error) => {
       this.logger.warn(
-        `WAHA session deferred for connection ${created.id} (worker may still be booting). Health check will auto-create. Error: ${error instanceof Error ? error.message : String(error)}`,
+        `WAHA setup deferred for ${created.id}: ${error instanceof Error ? error.message : String(error)}`,
       );
-      return this.mapConnection(created);
-    }
+    });
+
+    return this.mapConnection(created);
+  }
+
+  private async setupWorkerAndSession(connectionId: string, sessionName: string) {
+    const worker = await Promise.race([
+      this.workersService.findOrProvisionWorker(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Worker provisioning timeout')), 15000),
+      ),
+    ]);
+
+    await this.workersService.assignSession(worker.id, connectionId);
+
+    const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
+    const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
+    const wahaName = this.wahaService.resolveSessionName(sessionName);
+
+    await this.wahaService.resetSession(
+      worker.internalIp,
+      worker.apiKey,
+      wahaName,
+      webhookUrl,
+    );
+
+    await this.db
+      .update(wahaSessions)
+      .set({ status: 'scan_qr', updatedAt: new Date() })
+      .where(eq(wahaSessions.id, connectionId));
   }
 
   @Get(':id/qr')
