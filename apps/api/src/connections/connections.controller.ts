@@ -221,15 +221,35 @@ export class ConnectionsController {
       connection.sessionName,
     );
 
-    // Retry QR fetch up to 10 times (2s apart) — covers worker boot + WAHA init.
-    // After a scan, WAHA transitions through SCAN_QR_CODE → WORKING.
+    // Retry QR fetch up to 10 times (2s apart).
+    // WAHA keeps returning QR while in SCAN_QR_CODE, even after the user scans.
+    // After each successful QR fetch, peek at session status to detect transitions.
     for (let attempt = 0; attempt < 10; attempt++) {
       try {
         const qr = await this.wahaService.getQrCode(
-          worker.internalIp,
-          worker.apiKeyEnc,
-          wahaName,
+          worker.internalIp, worker.apiKeyEnc, wahaName,
         );
+        // QR returned successfully — but user may have already scanned.
+        // Peek at session status: if not SCAN_QR_CODE anymore, the scan happened.
+        if (attempt >= 1) {
+          try {
+            const peek = await this.wahaService.getSession(
+              worker.internalIp, worker.apiKeyEnc, wahaName,
+            );
+            if (peek.status === 'WORKING' || peek.status === 'STARTING') {
+              if (peek.status === 'WORKING') {
+                const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
+                try {
+                  const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
+                  const phone = me?.id?.replace('@c.us', '') || null;
+                  if (phone) updates.phoneNumber = phone;
+                } catch { /* non-critical */ }
+                await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
+              }
+              return { connected: true };
+            }
+          } catch { /* peek failed, return QR below */ }
+        }
         return qr;
       } catch (err) {
         // If WAHA says the session is already WORKING, return connected immediately
@@ -245,7 +265,7 @@ export class ConnectionsController {
           return { connected: true };
         }
 
-        // Between attempts, peek at session status in case the QR was already scanned
+        // Between attempts when QR fails, peek at session status
         if (attempt >= 2 && attempt % 2 === 1) {
           try {
             const peek = await this.wahaService.getSession(
