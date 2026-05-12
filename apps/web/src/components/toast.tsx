@@ -29,8 +29,13 @@ export function toast(message: string, type: "success" | "error" = "success") {
 }
 
 export function useToast() {
-  // We return the global toast function so it works everywhere
-  return { toast };
+  const ctx = useContext(ToastContext);
+  // If we are in a component that isn't wrapped by ToastProvider (common in Astro),
+  // we just return the global toast function. This prevents the warning.
+  if (!ctx) {
+    return { toast };
+  }
+  return ctx;
 }
 
 function ToastItem({
