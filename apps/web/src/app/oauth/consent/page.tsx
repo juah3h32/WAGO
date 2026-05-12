@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState, startTransition } from "react";
 import { useSearchParams } from "@/lib/next-shim";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "../../lib/supabase-client";
 import { Link } from "@/lib/next-shim";
 
 interface AuthorizationDetails {

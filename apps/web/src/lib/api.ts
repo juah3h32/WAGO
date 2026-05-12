@@ -10,7 +10,7 @@ const API_URL = getApiUrl();
 let _clientPromise: Promise<any> | null = null;
 function getSupabaseClient() {
   if (!_clientPromise) {
-    _clientPromise = import("@/lib/supabase/client").then((m) => m.createClient());
+    _clientPromise = import("./supabase-client").then((m) => m.createClient());
   }
   return _clientPromise;
 }

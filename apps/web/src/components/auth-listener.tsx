@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "@/lib/next-shim";
 import posthog from "posthog-js";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "../lib/supabase-client";
 
 /**
  * Client-side auth state listener. Keeps the session alive by
