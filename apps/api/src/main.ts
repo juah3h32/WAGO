@@ -19,7 +19,7 @@ async function bootstrap() {
       "https://www.recursomusical.com.mx",
       "https://api.recursomusical.com.mx",
       "https://whatsapp.recursomusical.com.mx",
-      /\.recursomusical\.com\.mx$/,
+      /https?:\/\/([a-z0-9-]+\.)*recursomusical\.com\.mx$/,
       /\.vercel\.app$/,
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -31,8 +31,6 @@ async function bootstrap() {
       "Origin",
     ],
     credentials: true,
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
   });
   app.setGlobalPrefix("api");
   app.useWebSocketAdapter(new WsAdapter(app));
