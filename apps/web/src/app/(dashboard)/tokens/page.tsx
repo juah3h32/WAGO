@@ -50,6 +50,7 @@ export default function TokensPage() {
       mutate((prev) => prev ? prev.map((t) => t.id === tempId ? { id: created.id, name: created.name, prefix: created.prefix, lastUsedAt: null, createdAt: created.createdAt ?? new Date().toISOString() } : t) : prev);
       setNewlyCreated(created);
       setFormName("");
+      setShowModal(false);
     } catch (err) {
       mutate((prev) => (prev ? prev.filter((t) => t.id !== tempId) : prev));
       toast(err instanceof Error ? err.message : "Failed to create token", "error");
