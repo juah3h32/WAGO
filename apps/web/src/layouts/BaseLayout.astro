@@ -1,5 +1,8 @@
 ---
 const { title } = Astro.props;
+const supabaseUrl = import.meta.env.PUBLIC_SUPABASE_URL ?? '';
+const supabaseKey = import.meta.env.PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? '';
+const apiUrl = import.meta.env.PUBLIC_API_URL ?? '';
 ---
 
 <html lang="es" class="dark">
@@ -9,10 +12,15 @@ const { title } = Astro.props;
     <title>{title}</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta id="app-config"
+      data-supabase-url={supabaseUrl}
+      data-supabase-key={supabaseKey}
+      data-api-url={apiUrl} />
     <script is:inline>
-      window.__SUPABASE_URL__ = "https://begktwirkeoswrsxoxph.supabase.co";
-      window.__SUPABASE_KEY__ = "sb_publishable_f5r9KNRT6SgSORDPBv6elA_0HWg8Mvy";
-      window.__API_URL__ = "http://localhost:3001";
+      const _cfg = document.getElementById('app-config');
+      window.__SUPABASE_URL__ = _cfg?.dataset?.supabaseUrl ?? '';
+      window.__SUPABASE_KEY__ = _cfg?.dataset?.supabaseKey ?? '';
+      window.__API_URL__ = _cfg?.dataset?.apiUrl ?? '';
     </script>
   </head>
   <body>

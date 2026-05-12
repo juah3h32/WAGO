@@ -48,12 +48,14 @@ function ConsentContent() {
       }
 
       try {
+        const supabaseUrl = (window as any).__SUPABASE_URL__ as string;
+        const supabaseKey = (window as any).__SUPABASE_KEY__ as string;
         const resp = await fetch(
-          `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/oauth/authorizations/${authorizationId}`,
+          `${supabaseUrl}/auth/v1/oauth/authorizations/${authorizationId}`,
           {
             headers: {
               Authorization: `Bearer ${session.access_token}`,
-              apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+              apikey: supabaseKey,
             },
           }
         );
@@ -87,13 +89,15 @@ function ConsentContent() {
     }
 
     try {
+      const supabaseUrl = (window as any).__SUPABASE_URL__ as string;
+      const supabaseKey = (window as any).__SUPABASE_KEY__ as string;
       const resp = await fetch(
-        `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/oauth/authorizations/${authorizationId}/consent`,
+        `${supabaseUrl}/auth/v1/oauth/authorizations/${authorizationId}/consent`,
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${session.access_token}`,
-            apikey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+            apikey: supabaseKey,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({ action }),
