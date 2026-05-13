@@ -1,7 +1,7 @@
 {
   "version": 2,
   "installCommand": "NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @wago/db build && pnpm --filter @wago/shared-types build && pnpm --filter @wago/api build",
-  "buildCommand": "",
+  "outputDirectory": "public",
   "routes": [
     {
       "src": "/api/(.*)",
