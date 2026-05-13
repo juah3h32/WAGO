@@ -1,5 +1,6 @@
 **/node_modules
 apps/web
+apps/api/nest-cli.json
 
 .turbo
 terraform
