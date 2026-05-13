@@ -21,6 +21,9 @@ import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
             port: parseInt(url.port || '6379'),
             password: url.password || undefined,
             tls: url.protocol === 'rediss:' ? {} : undefined,
+            enableReadyCheck: false,
+            maxRetriesPerRequest: null,
+            lazyConnect: true,
           },
         };
       },
