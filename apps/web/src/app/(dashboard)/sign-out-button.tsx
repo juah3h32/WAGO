@@ -10,7 +10,7 @@ export function SignOutButton() {
     const supabase = createClient();
     await supabase.auth.signOut();
     // Use window.location for a hard redirect to clear all client state
-    window.location.href = "/whatsapp/login";
+    window.location.href = "/login";
   }
 
   return (

@@ -34,7 +34,7 @@ export default function LoginForm() {
       document.cookie = `sb-refresh-token=${refresh_token}; path=/; max-age=86400; SameSite=Lax`;
     }
 
-    window.location.href = redirect || '/whatsapp/dashboard/connections';
+    window.location.href = redirect || '/dashboard/connections';
   }
 
   return (

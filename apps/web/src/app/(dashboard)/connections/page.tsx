@@ -231,7 +231,7 @@ function ConnectionsPageContent() {
         <div className="mt-6 space-y-2">
           {list.map((conn) => (
             <div key={conn.id} className="group relative flex items-center justify-between rounded-xl border border-border-primary bg-bg-secondary px-5 py-4 transition-all duration-150 hover:border-border-secondary hover:bg-bg-elevated">
-              <a href={`/whatsapp/dashboard/connections/${conn.id}`} className="min-w-0 flex-1 flex items-center gap-3">
+              <a href={`/dashboard/connections/${conn.id}`} className="min-w-0 flex-1 flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium text-text-primary">
                     {conn.name || "Conexión sin nombre"}

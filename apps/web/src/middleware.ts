@@ -1,6 +1,6 @@
 import { defineMiddleware } from 'astro:middleware';
 
-const BASE = '/whatsapp';
+const BASE = '';
 const PUBLIC_PATHS = [BASE + '/login', BASE + '/signup', BASE + '/auth', BASE + '/cli/auth', BASE + '/oauth', BASE + '/docs', BASE + '/terms', BASE + '/privacy'];
 
 export const onRequest = defineMiddleware(async (context, next) => {

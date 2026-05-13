@@ -5,5 +5,5 @@ export async function GET({ url, redirect }: { url: URL; redirect: (path: string
   if (code) {
     return redirect(`/auth/callback?code=${code}`);
   }
-  return redirect('/whatsapp/dashboard/connections');
+  return redirect('/dashboard/connections');
 }
