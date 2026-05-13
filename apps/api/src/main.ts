@@ -12,17 +12,8 @@ async function bootstrap() {
   app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
   const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
   app.enableCors({
-    origin: [
-      frontendUrl,
-      "http://localhost:3000",
-      "https://recursomusical.com.mx",
-      "https://www.recursomusical.com.mx",
-      "https://api.recursomusical.com.mx",
-      "https://whatsapp.recursomusical.com.mx",
-      /https?:\/\/([a-z0-9-]+\.)*recursomusical\.com\.mx$/,
-      /\.vercel\.app$/,
-    ],
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    origin: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: [
       "Content-Type",
       "Authorization",
@@ -31,6 +22,8 @@ async function bootstrap() {
       "Origin",
     ],
     credentials: true,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
   app.setGlobalPrefix("api");
   app.useWebSocketAdapter(new WsAdapter(app));
