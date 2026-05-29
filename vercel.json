@@ -1,5 +1,5 @@
 {
   "installCommand": "NODE_ENV=development pnpm install --frozen-lockfile && pnpm --filter @wago/db build && pnpm --filter @wago/shared-types build",
-  "buildCommand": "pnpm --filter @wago/web build",
+  "buildCommand": "cd apps/web && npx astro build",
   "outputDirectory": "apps/web/.vercel/output"
 }
