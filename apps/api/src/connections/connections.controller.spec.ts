@@ -224,7 +224,7 @@ describe('ConnectionsController', () => {
 
       const result = await controller.deleteConnection('sess-1', user);
 
-      expect(result).toEqual(updated);
+      expect(result).toEqual({ id: 'sess-1', name: null, status: 'stopped', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
       expect(wahaService.stopSession).toHaveBeenCalledWith('10.0.0.1', 'key-enc-123', 'u_user-123_s_abc');
       expect(workersService.unassignSession).toHaveBeenCalledWith('worker-1', 'sess-1');
     });
@@ -253,7 +253,7 @@ describe('ConnectionsController', () => {
 
       const result = await controller.deleteConnection('sess-1', user);
 
-      expect(result).toEqual(updated);
+      expect(result).toEqual({ id: 'sess-1', name: null, status: 'stopped', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
     });
   });
 });

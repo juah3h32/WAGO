@@ -44,7 +44,11 @@ export class WebhooksController {
       .from(webhookConfigs)
       .where(eq(webhookConfigs.sessionId, connectionId));
 
-    return results;
+    // Mask signing secret — only expose first 8 chars + ellipsis to prevent secret leakage
+    return results.map((r: any) => ({
+      ...r,
+      signingSecret: r.signingSecret ? r.signingSecret.slice(0, 8) + '…' : null,
+    }));
   }
 
   /**
@@ -118,7 +122,10 @@ export class WebhooksController {
       .where(eq(webhookConfigs.id, id))
       .returning();
 
-    return updated;
+    return {
+      ...updated,
+      signingSecret: updated?.signingSecret ? updated.signingSecret.slice(0, 8) + '…' : null,
+    };
   }
 
   /**

@@ -11,10 +11,26 @@ import {
   Logger,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
   ServiceUnavailableException,
   Header,
   StreamableFile,
 } from '@nestjs/common';
+
+// Validate that a URL is public (no private IPs, localhost, or internal hostnames)
+function assertPublicUrl(url: string | undefined): void {
+  if (!url) return;
+  let parsed: URL;
+  try { parsed = new URL(url); } catch { throw new BadRequestException('Invalid URL format'); }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:')
+    throw new BadRequestException('URL must use http or https');
+  const h = parsed.hostname.toLowerCase();
+  if (h === 'localhost' || h === '127.0.0.1' || h === '::1')
+    throw new BadRequestException('URL must be a public internet address');
+  const privateRanges = [/^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^169\.254\./];
+  if (privateRanges.some((r) => r.test(h)))
+    throw new BadRequestException('URL must be a public internet address');
+}
 import { ConfigService } from '@nestjs/config';
 import { eq, and, ne, inArray, desc } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
@@ -425,7 +441,7 @@ export class ConnectionsController {
       .where(eq(wahaSessions.id, id))
       .returning();
 
-    return updated;
+    return this.mapConnection(updated);
   }
 
   @Get(':id/chats')
@@ -738,6 +754,7 @@ export class ConnectionsController {
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; caption?: string; skipPresence?: boolean },
     @CurrentUser() user: { sub: string },
   ) {
+    assertPublicUrl(body.url);
     const { worker, wahaName } = await this.resolveWorker(id, user.sub);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
@@ -755,6 +772,7 @@ export class ConnectionsController {
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; filename?: string; caption?: string; skipPresence?: boolean },
     @CurrentUser() user: { sub: string },
   ) {
+    assertPublicUrl(body.url);
     const { worker, wahaName } = await this.resolveWorker(id, user.sub);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
@@ -772,6 +790,7 @@ export class ConnectionsController {
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; caption?: string; skipPresence?: boolean },
     @CurrentUser() user: { sub: string },
   ) {
+    assertPublicUrl(body.url);
     const { worker, wahaName } = await this.resolveWorker(id, user.sub);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
@@ -789,6 +808,7 @@ export class ConnectionsController {
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; skipPresence?: boolean },
     @CurrentUser() user: { sub: string },
   ) {
+    assertPublicUrl(body.url);
     const { worker, wahaName } = await this.resolveWorker(id, user.sub);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
@@ -904,6 +924,6 @@ export class ConnectionsController {
       .where(eq(wahaSessions.id, id))
       .returning();
 
-    return updated;
+    return this.mapConnection(updated);
   }
 }

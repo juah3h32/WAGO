@@ -60,7 +60,8 @@ describe('WebhooksController', () => {
 
       const result = await controller.listWebhooks(connectionId, user);
 
-      expect(result).toEqual(webhookConfigs);
+      // signingSecret is masked to first 8 chars + ellipsis
+      expect(result).toEqual(webhookConfigs.map((w: any) => ({ ...w, signingSecret: null })));
     });
 
     it('should throw NotFoundException when connection not found', async () => {
@@ -132,7 +133,8 @@ describe('WebhooksController', () => {
 
       const result = await controller.updateWebhook('wh-1', dto, user);
 
-      expect(result).toEqual(updatedConfig);
+      // signingSecret is masked
+      expect(result).toEqual({ ...updatedConfig, signingSecret: null });
       expect(db.update).toHaveBeenCalled();
       expect(db.set).toHaveBeenCalledWith(
         expect.objectContaining({

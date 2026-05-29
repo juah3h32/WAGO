@@ -8,7 +8,11 @@ export default function LoginForm() {
   const [loading, setLoading] = useState(false);
 
   const sp = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
-  const redirect = sp?.get('redirect');
+  const rawRedirect = sp?.get('redirect');
+  // Only allow same-origin relative paths to prevent open redirect attacks
+  const redirect = rawRedirect && rawRedirect.startsWith('/') && !rawRedirect.startsWith('//')
+    ? rawRedirect
+    : null;
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
