@@ -9,16 +9,24 @@
         <string>/opt/homebrew/bin/cloudflared</string>
         <string>tunnel</string>
         <string>--config</string>
-        <string>/Users/govideo/APIWHATS/wahooks/cloudflared-config.yml</string>
+        <string>/Users/govideo/.cloudflared/config.yml</string>
         <string>run</string>
+        <string>wago-api</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>StartInterval</key>
+    <integer>20</integer>
     <key>StandardOutPath</key>
     <string>/tmp/wago-cloudflared.log</string>
     <key>StandardErrorPath</key>
     <string>/tmp/wago-cloudflared-error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
 </dict>
 </plist>
