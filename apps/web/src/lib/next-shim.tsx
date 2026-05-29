@@ -18,8 +18,10 @@ export function useParams<T = Record<string, string>>(): T {
   const path = window.location.pathname;
   const segments = path.split('/').filter(Boolean);
   const result: Record<string, string> = {};
-  if (segments.length >= 3 && segments[0] === 'whatsapp' && segments[1] === 'dashboard' && segments[1] === 'connections' && segments[2]) {
-    result.id = segments[2];
+  // /dashboard/connections/[id] → find 'connections' and take the next segment
+  const connIdx = segments.indexOf('connections');
+  if (connIdx !== -1 && segments[connIdx + 1]) {
+    result.id = segments[connIdx + 1];
   }
   return result as T;
 }
