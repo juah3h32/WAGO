@@ -1,5 +1,5 @@
 **/node_modules
-apps/web
+apps/api
 .turbo
 terraform
 cli
