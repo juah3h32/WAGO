@@ -8,12 +8,14 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>cd /Users/govideo/APIWHATS/wahooks && /usr/local/bin/docker compose up -d</string>
+        <string>sleep 15 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /opt/homebrew/bin/docker compose up waha redis -d</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
+    <key>StartInterval</key>
+    <integer>0</integer>
     <key>StandardOutPath</key>
     <string>/tmp/wago-docker.log</string>
     <key>StandardErrorPath</key>
@@ -21,7 +23,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
 </plist>
