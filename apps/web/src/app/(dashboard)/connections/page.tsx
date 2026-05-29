@@ -82,7 +82,7 @@ function ConnectionsPageContent() {
       try {
         const conn = await apiFetch(`/api/connections/${newConnId}`);
         if (conn.status === "connected" || conn.status === "working") { closeModal(); mutate(); }
-      } catch {}
+      } catch (_e) { /* polling — ignore */ }
     }, 2000);
     return () => clearInterval(t);
   }, [newConnId, qr, mutate]);

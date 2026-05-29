@@ -65,7 +65,7 @@ export default function MessageAlerts() {
             setAlerts((prev) => [newAlert, ...prev].slice(0, 100));
             if (!showPanel) setUnreadCount((c) => c + 1);
           }
-        } catch {}
+        } catch (_e) { /* polling — ignore */ }
       }
       if (hasNew) {
         setSyncing(true);

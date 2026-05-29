@@ -19,6 +19,6 @@ export default [
     },
   },
   {
-    ignores: [".next/", "node_modules/"],
+    ignores: [".next/", "node_modules/", "src/.astro/"],
   },
 ];

@@ -216,7 +216,7 @@ export class ConnectionsController {
       throw new ForbiddenException('You do not own this connection');
     }
 
-    let worker = await this.workersService.getWorkerForSession(id);
+    const worker = await this.workersService.getWorkerForSession(id);
 
     if (!worker) {
       // Session exists but worker was never assigned (setup failed silently).
