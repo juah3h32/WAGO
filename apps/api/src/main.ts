@@ -1,3 +1,4 @@
+// Wago API — Copyright (c) 2026 Juan Pablo Corona. MIT License.
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { WsAdapter } from "@nestjs/platform-ws";

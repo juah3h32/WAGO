@@ -216,12 +216,15 @@ export class ConnectionsController {
       throw new ForbiddenException('You do not own this connection');
     }
 
-    const worker = await this.workersService.getWorkerForSession(id);
+    let worker = await this.workersService.getWorkerForSession(id);
 
     if (!worker) {
-      throw new ServiceUnavailableException(
-        'Worker is being provisioned, please wait',
-      );
+      // Session exists but worker was never assigned (setup failed silently).
+      // Re-trigger background setup so polling eventually succeeds.
+      this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+        this.logger.error(`Re-triggered setup failed for ${connection.id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      throw new ServiceUnavailableException('Worker is being provisioned, please wait');
     }
 
     const wahaName = this.wahaService.resolveSessionName(
@@ -360,7 +363,16 @@ export class ConnectionsController {
     const worker = await this.workersService.getWorkerForSession(id);
 
     if (!worker) {
-      throw new NotFoundException('No worker assigned to this connection');
+      // No worker assigned — re-trigger full setup instead of failing
+      await this.db
+        .update(wahaSessions)
+        .set({ status: 'pending', updatedAt: new Date() })
+        .where(eq(wahaSessions.id, id));
+      this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+        this.logger.error(`Restart setup failed for ${connection.id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      const [pending] = await this.db.select().from(wahaSessions).where(eq(wahaSessions.id, id));
+      return this.mapConnection(pending);
     }
 
     const wahaName = this.wahaService.resolveSessionName(

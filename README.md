@@ -287,4 +287,12 @@ Join our [Discord](https://discord.gg/B2XNf97Vby) to discuss ideas and get help.
 
 [MIT](LICENSE)
 
+## Author
+
+**Juan Pablo Corona** — creator and maintainer of Wago.
+
+Wago is a SaaS platform that lets developers connect WhatsApp numbers to their applications in seconds. It manages the full infrastructure stack — cloud-hosted WAHA sessions on Kubernetes, HMAC-signed webhook delivery via BullMQ, Supabase Auth, and Stripe billing — so developers only need to handle their own webhook endpoints.
+
 ---
+
+&copy; 2026 Juan Pablo Corona. All rights reserved.

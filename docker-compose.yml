@@ -5,11 +5,11 @@ services:
   waha:
     image: devlikeapro/waha
     restart: unless-stopped
+    ports:
+      - "3002:3000"
     environment:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-devkey}
       WHATSAPP_DEFAULT_ENGINE: NOWEB
-    ports:
-      - "3000:3000"
     networks:
       - internal
 

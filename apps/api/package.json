@@ -1,6 +1,9 @@
 {
   "name": "@wago/api",
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Wago API — NestJS server that manages WhatsApp sessions via WAHA, handles webhook delivery with BullMQ, and exposes the REST API consumed by the dashboard and SDKs.",
+  "author": "Juan Pablo Corona <juancorona-cmyk>",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "build": "nest build",

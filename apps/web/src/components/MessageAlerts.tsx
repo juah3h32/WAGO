@@ -95,9 +95,9 @@ export default function MessageAlerts() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — bottom-right to avoid covering the sidebar sign-out button */}
       <button onClick={() => { setShowPanel(true); setUnreadCount(0); }}
-        className="fixed bottom-4 left-4 z-50 flex items-center gap-3 rounded-2xl bg-bg-secondary border border-border-secondary px-4 py-3 shadow-xl transition-all hover:shadow-2xl hover:border-wa-green/30 hover:scale-[1.02] active:scale-95">
+        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-2xl bg-bg-secondary border border-border-secondary px-4 py-3 shadow-xl transition-all hover:shadow-2xl hover:border-wa-green/30 hover:scale-[1.02] active:scale-95">
         <div className="relative">
           <svg className={`h-5 w-5 text-text-secondary transition-all ${syncing ? "animate-spin text-wa-green" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/>
@@ -115,10 +115,10 @@ export default function MessageAlerts() {
         )}
       </button>
 
-      {/* Slide panel */}
+      {/* Slide panel — opens from the right */}
       {showPanel && (
-        <div className="fixed inset-0 z-50 flex">
-          <div className="w-80 shrink-0 border-r border-border-primary bg-bg-secondary flex flex-col animate-fade-in shadow-2xl">
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="w-80 shrink-0 border-l border-border-primary bg-bg-secondary flex flex-col animate-slide-right shadow-2xl">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-border-primary px-5 py-4">
               <div>
@@ -158,7 +158,7 @@ export default function MessageAlerts() {
               )}
             </div>
           </div>
-          <div className="flex-1" onClick={() => setShowPanel(false)} />
+          <div className="absolute inset-0 -z-10" onClick={() => setShowPanel(false)} />
         </div>
       )}
     </>

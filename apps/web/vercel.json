@@ -1,5 +1,3 @@
 {
-  "buildCommand": "pnpm build",
-  "outputDirectory": "dist",
-  "installCommand": "pnpm install"
+  "buildCommand": "npx astro build"
 }

@@ -1,39 +1,67 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bg-primary: #0a0a0a;
-  --color-bg-secondary: #0f0f0f;
-  --color-bg-elevated: #161616;
-  --color-bg-hover: #1e1e1e;
+  --color-bg-primary: #111b21;
+  --color-bg-secondary: #1f2c34;
+  --color-bg-elevated: #2a3942;
+  --color-bg-hover: #364954;
+  --color-bg-input: #2a3942;
   --color-border-primary: rgba(255, 255, 255, 0.06);
-  --color-border-secondary: rgba(255, 255, 255, 0.1);
-  --color-text-primary: #fafafa;
-  --color-text-secondary: #a1a1a1;
-  --color-text-tertiary: #6b6b6b;
-  --color-text-inverse: #0a0a0a;
+  --color-border-secondary: rgba(255, 255, 255, 0.10);
+  --color-text-primary: #e9edef;
+  --color-text-secondary: #aebac1;
+  --color-text-tertiary: #667781;
+  --color-text-inverse: #111b21;
   --color-wa-green: #00a884;
   --color-wa-green-dark: #008f72;
-  --color-status-error-border: rgba(239, 68, 68, 0.15);
-  --color-status-error-bg: rgba(239, 68, 68, 0.05);
+  --color-wa-green-light: rgba(0, 168, 132, 0.15);
+  --color-wa-bubble-out: #005c4b;
+  --color-wa-bubble-in: #1f2c34;
+  --color-status-error-border: rgba(239, 68, 68, 0.20);
+  --color-status-error-bg: rgba(239, 68, 68, 0.08);
   --color-status-error-text: #f87171;
-  --color-status-success-border: rgba(0, 168, 132, 0.15);
-  --color-status-success-bg: rgba(0, 168, 132, 0.05);
-  --color-status-success-text: #00a884;
-  --color-status-warning-border: rgba(234, 179, 8, 0.15);
-  --color-status-warning-bg: rgba(234, 179, 8, 0.05);
-  --color-status-warning-text: #facc15;
+  --color-status-success-border: rgba(0, 168, 132, 0.20);
+  --color-status-success-bg: rgba(0, 168, 132, 0.08);
+  --color-status-success-text: #25d366;
+  --color-status-warning-border: rgba(234, 179, 8, 0.20);
+  --color-status-warning-bg: rgba(234, 179, 8, 0.08);
+  --color-status-warning-text: #fbbf24;
+  --color-status-neutral-bg: rgba(174, 186, 193, 0.08);
+  --color-status-neutral-text: #aebac1;
 }
+
+* { box-sizing: border-box; }
 
 body {
   background-color: var(--color-bg-primary);
   color: var(--color-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
 @keyframes fade-in {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
 }
 
-.animate-fade-in {
-  animation: fade-in 0.4s ease-out;
-}
+.animate-fade-in      { animation: fade-in 0.25s ease-out; }
+.animate-slide-right  { animation: slide-in-right 0.2s ease-out; }
+.animate-scale-in     { animation: scale-in 0.15s ease-out; }
+.animate-pulse-dot    { animation: pulse-dot 1.5s ease-in-out infinite; }

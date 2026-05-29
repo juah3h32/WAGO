@@ -1,5 +1,9 @@
 {
   "name": "wago",
+  "version": "1.0.0",
+  "description": "SaaS platform for managed WhatsApp sessions — deploy cloud-hosted WAHA instances, receive signed webhooks, and send messages through a simple REST API, TypeScript/Python SDKs, and CLI.",
+  "author": "Juan Pablo Corona <juancorona-cmyk>",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "build": "turbo run build",
