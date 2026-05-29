@@ -200,10 +200,17 @@ export class ConnectionsController {
         webhookUrl,
       );
 
-      this.logger.log(`Setup complete for connection ${connectionId}, status: scan_qr`);
+      // Check actual WAHA status — don't downgrade working → scan_qr
+      let newStatus: string = 'scan_qr';
+      try {
+        const sess = await this.wahaService.getSession(worker.internalIp, worker.apiKey, wahaName);
+        if (sess?.status === 'WORKING') newStatus = 'working';
+      } catch { /* ignore */ }
+
+      this.logger.log(`Setup complete for connection ${connectionId}, status: ${newStatus}`);
       await this.db
         .update(wahaSessions)
-        .set({ status: 'scan_qr', updatedAt: new Date() })
+        .set({ status: newStatus, updatedAt: new Date() })
         .where(eq(wahaSessions.id, connectionId));
     } finally {
       this.setupLocks.delete(connectionId);
@@ -332,20 +339,9 @@ export class ConnectionsController {
           .where(eq(wahaSessions.id, id));
         return { connected: true };
       }
-      if (session.status === 'FAILED' || session.status === 'STOPPED') {
-        this.logger.log(
-          `Session ${wahaName} is ${session.status}, resetting with full config...`,
-        );
-        const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
-        const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
-        await this.wahaService.resetSession(
-          worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl,
-        );
-        await this.db
-          .update(wahaSessions)
-          .set({ status: 'scan_qr', updatedAt: new Date() })
-          .where(eq(wahaSessions.id, id));
-      }
+      // Do NOT reset here — the health check handles FAILED/STOPPED recovery.
+      // Resetting in the QR endpoint can destroy an authenticated session
+      // that is mid-transition (SCAN_QR_CODE → CONNECTING → WORKING).
     } catch (err) {
       // Session check also failed — worker is genuinely unavailable
     }
