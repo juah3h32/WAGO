@@ -6,6 +6,8 @@ import { EventsGateway } from './events.gateway';
 import { DRIZZLE_TOKEN } from '../database/database.module';
 import { WahaService } from '../waha/waha.service';
 
+const TEST_WORKER = { id: 'worker-1', ingressSecret: 'test-secret' };
+
 function createMockDb() {
   const mock: any = {};
   mock.select = jest.fn().mockReturnValue(mock);
@@ -21,6 +23,12 @@ function createMockDb() {
   mock.limit = jest.fn().mockResolvedValue([]);
   mock.and = jest.fn().mockReturnValue(mock);
   return mock;
+}
+
+/** Set up auth mock: first where() stays chainable, limit() returns worker. */
+function mockAuth(db: ReturnType<typeof createMockDb>) {
+  db.where.mockReturnValueOnce(db);
+  db.limit.mockResolvedValueOnce([TEST_WORKER]);
 }
 
 describe('EventsController', () => {
@@ -60,14 +68,12 @@ describe('EventsController', () => {
       const logEntry = { id: 'log-1' };
       const event = { event: 'message', session: 'u_user-123_s_abc', payload: { text: 'hello' } };
 
-      // First where() is for session lookup
+      mockAuth(db);
       db.where.mockResolvedValueOnce([session]);
-      // Second where() is for webhook configs lookup
       db.where.mockResolvedValueOnce([config]);
-      // returning() is for the log entry insert
       db.returning.mockResolvedValueOnce([logEntry]);
 
-      const result = await controller.ingestWahaEvent(event);
+      const result = await controller.ingestWahaEvent(event, TEST_WORKER.id, TEST_WORKER.ingressSecret);
 
       expect(result).toEqual({ received: true });
       expect(db.insert).toHaveBeenCalled();
@@ -91,12 +97,14 @@ describe('EventsController', () => {
     });
 
     it('should return { received: true } even when session not found', async () => {
+      mockAuth(db);
       db.where.mockResolvedValueOnce([]);
 
-      const result = await controller.ingestWahaEvent({
-        event: 'message',
-        session: 'nonexistent-session',
-      });
+      const result = await controller.ingestWahaEvent(
+        { event: 'message', session: 'nonexistent-session' },
+        TEST_WORKER.id,
+        TEST_WORKER.ingressSecret,
+      );
 
       expect(result).toEqual({ received: true });
       expect(webhookQueue.add).not.toHaveBeenCalled();
@@ -115,11 +123,12 @@ describe('EventsController', () => {
       const logEntry = { id: 'log-wildcard' };
       const event = { event: 'session.status', session: 'u_user-123_s_abc', payload: { status: 'WORKING' } };
 
+      mockAuth(db);
       db.where.mockResolvedValueOnce([session]);
       db.where.mockResolvedValueOnce([wildcardConfig]);
       db.returning.mockResolvedValueOnce([logEntry]);
 
-      const result = await controller.ingestWahaEvent(event);
+      const result = await controller.ingestWahaEvent(event, TEST_WORKER.id, TEST_WORKER.ingressSecret);
 
       expect(result).toEqual({ received: true });
       expect(webhookQueue.add).toHaveBeenCalledWith('deliver', expect.objectContaining({
@@ -140,10 +149,11 @@ describe('EventsController', () => {
       };
       const event = { event: 'session.status', session: 'u_user-123_s_abc' };
 
+      mockAuth(db);
       db.where.mockResolvedValueOnce([session]);
       db.where.mockResolvedValueOnce([config]);
 
-      const result = await controller.ingestWahaEvent(event);
+      const result = await controller.ingestWahaEvent(event, TEST_WORKER.id, TEST_WORKER.ingressSecret);
 
       expect(result).toEqual({ received: true });
       expect(webhookQueue.add).not.toHaveBeenCalled();
@@ -171,12 +181,13 @@ describe('EventsController', () => {
       const logEntry2 = { id: 'log-2' };
       const event = { event: 'message', session: 'u_user-123_s_abc', payload: { text: 'hi' } };
 
+      mockAuth(db);
       db.where.mockResolvedValueOnce([session]);
       db.where.mockResolvedValueOnce([config1, config2]);
       db.returning.mockResolvedValueOnce([logEntry1]);
       db.returning.mockResolvedValueOnce([logEntry2]);
 
-      const result = await controller.ingestWahaEvent(event);
+      const result = await controller.ingestWahaEvent(event, TEST_WORKER.id, TEST_WORKER.ingressSecret);
 
       expect(result).toEqual({ received: true });
       expect(webhookQueue.add).toHaveBeenCalledTimes(2);

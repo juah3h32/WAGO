@@ -22,7 +22,7 @@ describe('WahaService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WahaService,
-        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('50') } },
+        { provide: ConfigService, useValue: { get: jest.fn((key: string, def: string) => key === 'WAHA_PORT' ? '3000' : (def ?? '1')) } },
       ],
     }).compile();
 

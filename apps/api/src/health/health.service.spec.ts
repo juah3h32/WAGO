@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
 import { HealthService } from './health.service';
 import { WahaService } from '../waha/waha.service';
+import { AntiSpamService } from '../waha/anti-spam.service';
 import { WorkersService } from '../workers/workers.service';
 import { DRIZZLE_TOKEN } from '../database/database.module';
 
@@ -47,6 +48,7 @@ describe('HealthService', () => {
         HealthService,
         { provide: DRIZZLE_TOKEN, useValue: db },
         { provide: WahaService, useValue: wahaService },
+        { provide: AntiSpamService, useValue: { markSessionConnected: jest.fn(), canRestart: jest.fn().mockReturnValue(true), recordRestart: jest.fn() } },
         { provide: WorkersService, useValue: workersService },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('http://localhost:3001') } },
       ],
@@ -138,7 +140,7 @@ describe('HealthService', () => {
     });
 
     it('should trigger resetSession when WAHA reports FAILED', async () => {
-      const worker = { id: 'w1', internalIp: '10.0.0.1', apiKeyEnc: 'key' };
+      const worker = { id: 'w1', internalIp: '10.0.0.1', apiKeyEnc: 'key', ingressSecret: 'w1-secret' };
       const wahaSessionsList = [{ name: 's1', status: 'FAILED' as const }];
       const dbSessions = [{ id: 'sid1', sessionName: 's1', status: 'working' }];
 
@@ -153,7 +155,7 @@ describe('HealthService', () => {
       await service.pollWorkerHealth();
 
       expect(wahaService.resetSession).toHaveBeenCalledWith(
-        '10.0.0.1', 'key', 's1', 'http://localhost:3001/api/events/waha',
+        '10.0.0.1', 'key', 's1', 'http://localhost:3001/api/events/waha?workerId=w1&secret=w1-secret',
       );
     });
 
@@ -176,7 +178,7 @@ describe('HealthService', () => {
     });
 
     it('should trigger resetSession when WAHA reports STOPPED but DB says working', async () => {
-      const worker = { id: 'w1', internalIp: '10.0.0.1', apiKeyEnc: 'key' };
+      const worker = { id: 'w1', internalIp: '10.0.0.1', apiKeyEnc: 'key', ingressSecret: 'w1-secret' };
       const wahaSessionsList = [{ name: 's1', status: 'STOPPED' as const }];
       const dbSessions = [{ id: 'sid1', sessionName: 's1', status: 'working' }];
 
@@ -190,7 +192,7 @@ describe('HealthService', () => {
       await service.pollWorkerHealth();
 
       expect(wahaService.resetSession).toHaveBeenCalledWith(
-        '10.0.0.1', 'key', 's1', 'http://localhost:3001/api/events/waha',
+        '10.0.0.1', 'key', 's1', 'http://localhost:3001/api/events/waha?workerId=w1&secret=w1-secret',
       );
     });
 

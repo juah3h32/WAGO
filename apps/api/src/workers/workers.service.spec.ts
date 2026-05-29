@@ -113,10 +113,14 @@ describe('WorkersService', () => {
         apiKey: 'new-api-key',
       });
 
+      // Existing-pod check returns empty (new pod)
+      db.mockResult([]);
+
       const insertedWorker = {
         id: 'worker-new',
         internalIp: '10.0.0.99',
         apiKeyEnc: 'new-api-key',
+        ingressSecret: 'test-ingress-secret',
       };
       db.mockResult([insertedWorker]);
 
@@ -128,6 +132,7 @@ describe('WorkersService', () => {
         id: 'worker-new',
         internalIp: '10.0.0.99',
         apiKey: 'new-api-key',
+        ingressSecret: 'test-ingress-secret',
       });
     });
   });

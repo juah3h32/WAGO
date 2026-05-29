@@ -15,7 +15,7 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}/api
+  IMAGE_NAME: ${{ github.repository_owner }}/wago/api
 
 jobs:
   build-and-push:

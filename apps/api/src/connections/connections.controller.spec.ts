@@ -5,7 +5,7 @@ import { ConnectionsController } from './connections.controller';
 import { DRIZZLE_TOKEN } from '../database/database.module';
 import { WorkersService } from '../workers/workers.service';
 import { WahaService } from '../waha/waha.service';
-import { StripeService } from '../billing/stripe.service';
+import { AntiSpamService } from '../waha/anti-spam.service';
 import { AuthGuard } from '../auth/auth.guard';
 
 function createMockDb() {
@@ -31,7 +31,6 @@ describe('ConnectionsController', () => {
   let workersService: { findOrProvisionWorker: jest.Mock; assignSession: jest.Mock; getWorkerForSession: jest.Mock; unassignSession: jest.Mock };
   let wahaService: { createSession: jest.Mock; startSession: jest.Mock; stopSession: jest.Mock; getQrCode: jest.Mock; restartSession: jest.Mock; resetSession: jest.Mock; deleteSession: jest.Mock; getSession: jest.Mock; resolveSessionName: jest.Mock; logoutSession: jest.Mock };
   let configService: { get: jest.Mock };
-  let stripeService: { getPaidSlots: jest.Mock; createCheckoutSession: jest.Mock; getSubscriptionStatus: jest.Mock; createPortalSession: jest.Mock; constructWebhookEvent: jest.Mock; createCustomer: jest.Mock };
 
   beforeEach(async () => {
     db = createMockDb();
@@ -60,23 +59,14 @@ describe('ConnectionsController', () => {
       get: jest.fn().mockReturnValue('http://localhost:3001'),
     };
 
-    stripeService = {
-      getPaidSlots: jest.fn(),
-      createCheckoutSession: jest.fn(),
-      getSubscriptionStatus: jest.fn(),
-      createPortalSession: jest.fn(),
-      constructWebhookEvent: jest.fn(),
-      createCustomer: jest.fn(),
-    };
-
     const module: TestingModule = await Test.createTestingModule({
       controllers: [ConnectionsController],
       providers: [
         { provide: DRIZZLE_TOKEN, useValue: db },
         { provide: WorkersService, useValue: workersService },
         { provide: WahaService, useValue: wahaService },
+        { provide: AntiSpamService, useValue: { markSessionConnected: jest.fn(), canRestart: jest.fn().mockReturnValue(true), recordRestart: jest.fn() } },
         { provide: ConfigService, useValue: configService },
-        { provide: StripeService, useValue: stripeService },
       ],
     })
       .overrideGuard(AuthGuard)
@@ -118,93 +108,36 @@ describe('ConnectionsController', () => {
   });
 
   describe('createConnection', () => {
-    it('should insert a session, provision worker, create/start WAHA session, and return updated record when user has available slots', async () => {
+    it('should insert a session and return the created record', async () => {
       const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
-      const updated = { ...created, status: 'scan_qr' };
-      const worker = { id: 'worker-1', internalIp: '10.0.0.1', apiKey: 'key-123' };
-      const dbUser = { id: 'user-123', email: 'test@example.com', stripeCustomerId: 'cus_123' };
 
-      // First where() for user lookup (billing check)
-      db.where.mockResolvedValueOnce([dbUser]);
-      stripeService.getPaidSlots.mockResolvedValue(5);
-      // Second where() for active connections count (billing check)
-      db.where.mockResolvedValueOnce([{ id: 'sess-existing' }]);
-      // returning() from insert
       db.returning.mockResolvedValueOnce([created]);
-      // returning() from update
-      db.returning.mockResolvedValueOnce([updated]);
-
-      workersService.findOrProvisionWorker.mockResolvedValue(worker);
-      workersService.assignSession.mockResolvedValue(undefined);
-      wahaService.createSession.mockResolvedValue({});
-      wahaService.startSession.mockResolvedValue(undefined);
-
-      const result = await controller.createConnection(user);
-
-      expect(result).toEqual(updated);
-      expect(stripeService.getPaidSlots).toHaveBeenCalledWith('cus_123');
-      expect(db.insert).toHaveBeenCalled();
-      expect(workersService.findOrProvisionWorker).toHaveBeenCalled();
-      expect(workersService.assignSession).toHaveBeenCalledWith('worker-1', 'sess-new');
-      expect(wahaService.createSession).toHaveBeenCalledWith(
-        '10.0.0.1',
-        'key-123',
-        expect.any(String),
-        'http://localhost:3001/api/events/waha',
-      );
-      expect(wahaService.startSession).toHaveBeenCalledWith(
-        '10.0.0.1',
-        'key-123',
-        expect.any(String),
-      );
-    });
-
-    it('should allow admin users to create connections without billing', async () => {
-      const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
-      const dbUser = { id: 'user-123', email: 'admin@example.com', stripeCustomerId: null, isAdmin: true };
-
-      // First where() for user lookup (billing check) - admin with no stripe
-      db.where.mockResolvedValueOnce([dbUser]);
-      // returning() from insert
-      db.returning.mockResolvedValueOnce([created]);
-
-      workersService.findOrProvisionWorker.mockRejectedValue(new Error('No workers'));
+      // Background setup fires and forgets — let it reject silently
+      workersService.findOrProvisionWorker.mockRejectedValue(new Error('no workers'));
 
       const result = await controller.createConnection(user);
 
       expect(result).toEqual(created);
-      expect(stripeService.getPaidSlots).not.toHaveBeenCalled();
+      expect(db.insert).toHaveBeenCalled();
     });
 
-    it('should throw ForbiddenException when all slots are in use', async () => {
-      const dbUser = { id: 'user-123', email: 'test@example.com', stripeCustomerId: 'cus_123' };
+    it('should insert with an optional name', async () => {
+      const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending', name: 'My Phone' };
 
-      // User lookup
-      db.where.mockResolvedValueOnce([dbUser]);
-      stripeService.getPaidSlots.mockResolvedValue(2);
-      // Active connections = 2 (all slots used)
-      db.where.mockResolvedValueOnce([{ id: 'sess-1' }, { id: 'sess-2' }]);
-
-      await expect(controller.createConnection(user)).rejects.toThrow(ForbiddenException);
-    });
-
-    it('should throw ForbiddenException when non-admin user has no Stripe customer', async () => {
-      const dbUser = { id: 'user-123', email: 'test@example.com', stripeCustomerId: null, isAdmin: false };
-
-      db.where.mockResolvedValueOnce([dbUser]);
-
-      await expect(controller.createConnection(user)).rejects.toThrow(ForbiddenException);
-    });
-
-    it('should return the created record if provisioning fails', async () => {
-      const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
-      const dbUser = { id: 'user-123', email: 'test@example.com', stripeCustomerId: 'cus_123' };
-
-      db.where.mockResolvedValueOnce([dbUser]);
-      stripeService.getPaidSlots.mockResolvedValue(5);
-      db.where.mockResolvedValueOnce([]);
       db.returning.mockResolvedValueOnce([created]);
-      workersService.findOrProvisionWorker.mockRejectedValue(new Error('No workers'));
+      workersService.findOrProvisionWorker.mockRejectedValue(new Error('no workers'));
+
+      const result = await controller.createConnection(user, { name: 'My Phone' });
+
+      expect(result).toEqual(created);
+      expect(db.insert).toHaveBeenCalled();
+    });
+
+    it('should return the created record even if background provisioning fails', async () => {
+      const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
+
+      db.returning.mockResolvedValueOnce([created]);
+      workersService.findOrProvisionWorker.mockRejectedValue(new Error('No workers available'));
 
       const result = await controller.createConnection(user);
 
