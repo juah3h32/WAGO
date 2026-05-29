@@ -43,6 +43,16 @@ export class WahaService {
     this.logger.log(
       `Resetting session "${sessionName}" on worker ${workerUrl}`,
     );
+    // If WAHA already has the session ready to scan, skip the destructive reset
+    try {
+      const existing = await this.getSession(workerUrl, apiKey, sessionName);
+      if (existing?.status === 'SCAN_QR_CODE' || existing?.status === 'WORKING') {
+        this.logger.log(`Session "${sessionName}" already in ${existing.status}, skipping reset`);
+        return;
+      }
+    } catch {
+      // No session exists yet — proceed with full reset below
+    }
     try {
       await this.stopSession(workerUrl, apiKey, sessionName);
     } catch {

@@ -30,6 +30,7 @@ import { AntiSpamService } from '../waha/anti-spam.service';
 @UseGuards(AuthGuard)
 export class ConnectionsController {
   private readonly logger = new Logger(ConnectionsController.name);
+  private readonly setupLocks = new Set<string>(); // per-connection lock
 
   constructor(
     @Inject(DRIZZLE_TOKEN) private readonly db: any,
@@ -168,34 +169,45 @@ export class ConnectionsController {
   }
 
   private async setupWorkerAndSession(connectionId: string, sessionName: string) {
-    this.logger.log(`Starting background setup for connection ${connectionId} (${sessionName})`);
-    const worker = await Promise.race([
-      this.workersService.findOrProvisionWorker(),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Worker provisioning timeout')), 30000),
-      ),
-    ]);
+    // Prevent concurrent setup calls for the same connection
+    if (this.setupLocks.has(connectionId)) {
+      this.logger.log(`Setup already in progress for ${connectionId}, skipping`);
+      return;
+    }
+    this.setupLocks.add(connectionId);
 
-    this.logger.log(`Assigning connection ${connectionId} to worker ${worker.id}`);
-    await this.workersService.assignSession(worker.id, connectionId);
+    try {
+      this.logger.log(`Starting background setup for connection ${connectionId} (${sessionName})`);
+      const worker = await Promise.race([
+        this.workersService.findOrProvisionWorker(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Worker provisioning timeout')), 30000),
+        ),
+      ]);
 
-    const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
-    const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
-    const wahaName = this.wahaService.resolveSessionName(sessionName);
+      this.logger.log(`Assigning connection ${connectionId} to worker ${worker.id}`);
+      await this.workersService.assignSession(worker.id, connectionId);
 
-    this.logger.log(`Resetting WAHA session ${wahaName} on worker ${worker.internalIp}`);
-    await this.wahaService.resetSession(
-      worker.internalIp,
-      worker.apiKey,
-      wahaName,
-      webhookUrl,
-    );
+      const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
+      const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
+      const wahaName = this.wahaService.resolveSessionName(sessionName);
 
-    this.logger.log(`Setup complete for connection ${connectionId}, status: scan_qr`);
-    await this.db
-      .update(wahaSessions)
-      .set({ status: 'scan_qr', updatedAt: new Date() })
-      .where(eq(wahaSessions.id, connectionId));
+      this.logger.log(`Resetting WAHA session ${wahaName} on worker ${worker.internalIp}`);
+      await this.wahaService.resetSession(
+        worker.internalIp,
+        worker.apiKey,
+        wahaName,
+        webhookUrl,
+      );
+
+      this.logger.log(`Setup complete for connection ${connectionId}, status: scan_qr`);
+      await this.db
+        .update(wahaSessions)
+        .set({ status: 'scan_qr', updatedAt: new Date() })
+        .where(eq(wahaSessions.id, connectionId));
+    } finally {
+      this.setupLocks.delete(connectionId);
+    }
   }
 
   @Get(':id/qr')

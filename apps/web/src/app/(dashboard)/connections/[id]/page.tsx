@@ -79,6 +79,8 @@ function ConnectionDetailPageContent() {
   const [qr, setQr] = useState<QrData | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
+  const [setupSeconds, setSetupSeconds] = useState(0);
+  const setupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [profile, setProfile] = useState<WaProfile | null>(null);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
@@ -131,6 +133,8 @@ function ConnectionDetailPageContent() {
       const d = await apiFetch(`/api/connections/${id}/qr`);
       if (d.connected) { mutateConn((p: Connection | null) => p ? { ...p, status: "connected" } : p); setQr(null); setQrError(null); return; }
       setQr(d); setQrError(null);
+      // QR loaded — stop timer
+      if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; setSetupSeconds(0); }
     } catch (err) { setQrError(err instanceof Error ? err.message : "Error al cargar QR"); }
   }, [id, mutateConn]);
 
@@ -143,14 +147,23 @@ function ConnectionDetailPageContent() {
     return () => clearInterval(t);
   }, [fetchConn]);
 
-  // Poll QR
+  // Poll QR + setup countdown timer
   useEffect(() => {
     if (!connection) return;
     if (connection.status === "scan_qr" || connection.status === "pending") {
       fetchQr();
       const t = setInterval(fetchQr, 3000);
-      return () => clearInterval(t);
-    } else { setQr(null); setQrError(null); }
+      // Start elapsed-seconds counter so user sees progress
+      setSetupSeconds(0);
+      setupTimerRef.current = setInterval(() => setSetupSeconds(s => s + 1), 1000);
+      return () => {
+        clearInterval(t);
+        if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; }
+      };
+    } else {
+      setQr(null); setQrError(null); setSetupSeconds(0);
+      if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; }
+    }
   }, [connection?.status, fetchQr]);
 
   // Load chats when connected
@@ -338,16 +351,22 @@ function ConnectionDetailPageContent() {
                   <img src={`data:${qr.mimetype};base64,${qr.value}`} alt="QR Code" className="h-52 w-52 rounded-xl"/>
                 </div>
               ) : (
-                <div className="flex h-[220px] w-[220px] items-center justify-center rounded-2xl bg-bg-elevated">
-                  {qrError ? (
-                    <p className="text-xs text-text-tertiary text-center px-4">
-                      {qrError.includes("provisioned") || qrError.includes("starting") ? "Iniciando servidor…" : qrError}
-                    </p>
-                  ) : (
-                    <svg className="h-8 w-8 animate-spin text-wa-green" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
-                      <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-                    </svg>
+                <div className="flex h-[220px] w-[220px] flex-col items-center justify-center gap-3 rounded-2xl bg-bg-elevated">
+                  <svg className="h-8 w-8 animate-spin text-wa-green" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                    <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                  </svg>
+                  <p className="text-xs text-text-tertiary text-center px-4">
+                    {setupSeconds > 0 ? `Iniciando sesión… ${setupSeconds}s` : "Iniciando sesión…"}
+                  </p>
+                  {setupSeconds >= 15 && (
+                    <button
+                      onClick={handleRestart}
+                      disabled={restarting}
+                      className="text-xs text-wa-green underline hover:text-wa-green-dark disabled:opacity-50"
+                    >
+                      {restarting ? "Reiniciando…" : "Reintentar"}
+                    </button>
                   )}
                 </div>
               )}
