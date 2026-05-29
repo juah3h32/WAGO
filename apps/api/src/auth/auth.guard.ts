@@ -18,13 +18,14 @@ import { DRIZZLE_TOKEN } from '../database/database.module';
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
   private readonly jwksClient: jwksRsa.JwksClient;
+  private readonly supabaseUrl: string;
 
   constructor(
     private readonly configService: ConfigService,
     @Inject(DRIZZLE_TOKEN) private readonly db: any,
   ) {
-    const supabaseUrl = this.configService.getOrThrow<string>('SUPABASE_URL');
-    const jwksUri = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
+    this.supabaseUrl = this.configService.getOrThrow<string>('SUPABASE_URL');
+    const jwksUri = `${this.supabaseUrl}/auth/v1/.well-known/jwks.json`;
 
     this.jwksClient = jwksRsa({
       jwksUri,
@@ -132,6 +133,8 @@ export class AuthGuard implements CanActivate {
     try {
       const payload = jwt.verify(token, signingKey, {
         algorithms: ['RS256', 'ES256'],
+        issuer: `${this.supabaseUrl}/auth/v1`,
+        audience: 'authenticated',
       });
       return payload as Record<string, unknown>;
     } catch (error) {

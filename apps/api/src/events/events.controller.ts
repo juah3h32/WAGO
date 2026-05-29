@@ -1,6 +1,6 @@
 import { Controller, Post, Body, Query, Inject, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { SkipThrottle } from '@nestjs/throttler';
+import { Throttle } from '@nestjs/throttler';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { timingSafeEqual } from 'crypto';
@@ -17,7 +17,6 @@ interface WahaEvent {
   [key: string]: unknown;
 }
 
-@SkipThrottle()
 @Controller('events')
 export class EventsController {
   private readonly logger = new Logger(EventsController.name);
@@ -34,6 +33,7 @@ export class EventsController {
    * Ingestion endpoint for WAHA webhook events.
    * No auth guard — this receives internal traffic from WAHA worker containers.
    */
+  @Throttle({ default: { limit: 300, ttl: 60000 } })
   @Post('waha')
   async ingestWahaEvent(
     @Body() event: WahaEvent,

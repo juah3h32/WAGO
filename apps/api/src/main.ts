@@ -13,7 +13,18 @@ async function bootstrap() {
   app.useBodyParser("urlencoded", { limit: "1mb", extended: true });
   const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:3000";
   app.enableCors({
-    origin: true,
+    origin: (origin, callback) => {
+      const allowed = [
+        process.env.FRONTEND_URL ?? 'http://localhost:3000',
+        'https://wago-lake.vercel.app',
+        'https://wago.com',
+      ];
+      if (!origin || allowed.some(o => origin === o || origin.startsWith('http://localhost'))) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: [
       "Content-Type",
@@ -28,7 +39,7 @@ async function bootstrap() {
   });
   app.setGlobalPrefix("api");
   app.useWebSocketAdapter(new WsAdapter(app));
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
   await app.listen(process.env.PORT ?? 3001);
 }
 

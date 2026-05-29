@@ -47,7 +47,15 @@ export class ConnectionsController {
   }
 
   private mapConnection(conn: any): any {
-    return { ...conn, status: this.mapStatus(conn.status) };
+    return {
+      id: conn.id,
+      name: conn.name ?? null,
+      status: this.mapStatus(conn.status),
+      phoneNumber: conn.phoneNumber ?? null,
+      engine: conn.engine ?? null,
+      createdAt: conn.createdAt,
+      updatedAt: conn.updatedAt,
+    };
   }
 
   @Get()
@@ -139,6 +147,15 @@ export class ConnectionsController {
     @CurrentUser() user: { sub: string },
     @Body() body?: { name?: string },
   ) {
+    const MAX_CONNECTIONS = 10;
+    const existing = await this.db
+      .select()
+      .from(wahaSessions)
+      .where(and(eq(wahaSessions.userId, user.sub), ne(wahaSessions.status, 'stopped')));
+    if (existing.length >= MAX_CONNECTIONS) {
+      throw new ForbiddenException(`Maximum ${MAX_CONNECTIONS} active connections allowed`);
+    }
+
     const shortUserId = user.sub.replace(/-/g, '').slice(0, 12);
     const shortSessionId = randomBytes(6).toString('hex');
     const sessionName = `u_${shortUserId}_s_${shortSessionId}`;

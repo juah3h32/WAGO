@@ -27,7 +27,8 @@ export const createHandler = async (expressInstance: express.Express) => {
       "https://api.recursomusical.com.mx",
       "https://whatsapp.recursomusical.com.mx",
       /https?:\/\/([a-z0-9-]+\.)*recursomusical\.com\.mx$/,
-      /\.vercel\.app$/,
+      'https://wago-lake.vercel.app',
+      /https:\/\/wago-[a-z0-9]+-coronapablo99-5818s-projects\.vercel\.app$/,
     ],
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: [
@@ -42,7 +43,7 @@ export const createHandler = async (expressInstance: express.Express) => {
     optionsSuccessStatus: 204,
   });
   
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
   
   await app.init();
   cachedApp = app;

@@ -58,6 +58,15 @@ export class WebhooksController {
   ) {
     await this.verifyConnectionOwnership(connectionId, user.sub);
 
+    const MAX_WEBHOOKS_PER_CONNECTION = 10;
+    const existing = await this.db
+      .select()
+      .from(webhookConfigs)
+      .where(eq(webhookConfigs.sessionId, connectionId));
+    if (existing.length >= MAX_WEBHOOKS_PER_CONNECTION) {
+      throw new ForbiddenException(`Maximum ${MAX_WEBHOOKS_PER_CONNECTION} webhooks per connection`);
+    }
+
     const signingSecret = randomBytes(32).toString('hex');
 
     const [created] = await this.db

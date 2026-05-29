@@ -16,7 +16,7 @@ function getApiUrl() {
     }
   }
   
-  if (typeof window !== 'undefined') {
+  if (import.meta.env.DEV && typeof window !== 'undefined') {
     console.log("[API] Using API URL:", url || "(empty, using relative paths)");
   }
   return url;

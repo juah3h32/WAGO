@@ -51,6 +51,7 @@ export class WebhookDeliveryProcessor extends WorkerHost {
         },
         body,
         signal: controller.signal,
+        redirect: 'error',
       });
 
       clearTimeout(timeout);
