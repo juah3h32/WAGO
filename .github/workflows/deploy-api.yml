@@ -49,50 +49,34 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p ~/.kube
-          echo "${{ secrets.DEPLOY_KUBECONFIG }}" | base64 -d > ~/.kube/config
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
 
-      - name: Run migrations in-cluster
-        run: |
-          POD_NAME="migrate-$(echo ${{ github.sha }} | cut -c1-8)"
-          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
-          DB_URL=$(kubectl get secret wago-api-secret -n default -o jsonpath='{.data.DATABASE_URL}' | base64 -d)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
 
-          kubectl run "$POD_NAME" \
-            --image="$IMAGE" \
-            --restart=Never \
-            --namespace=default \
-            --env="DATABASE_URL=$DB_URL" \
-            --overrides='{"spec":{"imagePullSecrets":[{"name":"ghcr-secret"}]}}' \
-            --command -- node packages/db/scripts/migrate.cjs
+      - name: Install DB dependencies
+        run: pnpm --filter @wago/db install --frozen-lockfile
 
-          # Wait for pod to finish (Running or Succeeded/Failed)
-          kubectl wait --for=condition=Ready "pod/$POD_NAME" -n default --timeout=60s 2>/dev/null || true
-          kubectl wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$POD_NAME" -n default --timeout=120s 2>/dev/null || true
+      - name: Build DB package
+        run: pnpm --filter @wago/db build
 
-          # Stream logs
-          kubectl logs "$POD_NAME" -n default || true
-
-          # Check pod succeeded
-          STATUS=$(kubectl get pod "$POD_NAME" -n default -o jsonpath='{.status.phase}')
-          echo "Migration pod status: $STATUS"
-
-          # Cleanup
-          kubectl delete pod "$POD_NAME" -n default --ignore-not-found
-
-          if [ "$STATUS" != "Succeeded" ]; then
-            echo "Migration failed with status: $STATUS"
-            exit 1
-          fi
+      - name: Run migrations
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+        run: node packages/db/scripts/migrate.cjs
 
   deploy:
     needs: [build-and-push, migrate]
     runs-on: ubuntu-latest
+    # Only deploy to Kubernetes when the kubeconfig secret is configured
+    if: ${{ secrets.DEPLOY_KUBECONFIG != '' }}
 
     steps:
       - name: Set up kubectl

@@ -1,26 +1,28 @@
-const { drizzle } = require('drizzle-orm/postgres-js');
-const { migrate } = require('drizzle-orm/postgres-js/migrator');
-const postgres = require('postgres');
+const { drizzle } = require('drizzle-orm/libsql');
+const { migrate } = require('drizzle-orm/libsql/migrator');
+const { createClient } = require('@libsql/client');
 const path = require('path');
 
 async function runMigrations() {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    console.error('DATABASE_URL is required');
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+
+  if (!url) {
+    console.error('TURSO_DATABASE_URL is required');
     process.exit(1);
   }
 
-  console.log('Running migrations...');
+  console.log('Running migrations against Turso DB...');
 
-  const sql = postgres(databaseUrl, { max: 1 });
-  const db = drizzle(sql);
+  const client = createClient({ url, authToken });
+  const db = drizzle(client);
 
   await migrate(db, {
     migrationsFolder: path.join(__dirname, '..', 'drizzle'),
   });
 
   console.log('Migrations complete');
-  await sql.end();
+  client.close();
 }
 
 runMigrations().catch((err) => {
