@@ -88,10 +88,10 @@ describe('ConnectionsController', () => {
 
       const result = await controller.listConnections(user);
 
-      // API maps "working" → "connected" in responses
+      // mapConnection strips internal fields (userId, sessionName, workerId) and maps working→connected
       expect(result).toEqual([
-        { id: 'sess-1', userId: 'user-123', sessionName: 'u_user-123_s_abc', status: 'connected' },
-        { id: 'sess-2', userId: 'user-123', sessionName: 'u_user-123_s_def', status: 'scan_qr' },
+        { id: 'sess-1', name: null, status: 'connected', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined },
+        { id: 'sess-2', name: null, status: 'scan_qr', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined },
       ]);
       expect(db.select).toHaveBeenCalled();
       expect(db.from).toHaveBeenCalled();
@@ -110,38 +110,38 @@ describe('ConnectionsController', () => {
   describe('createConnection', () => {
     it('should insert a session and return the created record', async () => {
       const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
-
       db.returning.mockResolvedValueOnce([created]);
-      // Background setup fires and forgets — let it reject silently
+      // Per-user limit check (returns [] meaning no existing connections)
+      db.where.mockResolvedValueOnce([]);
       workersService.findOrProvisionWorker.mockRejectedValue(new Error('no workers'));
 
       const result = await controller.createConnection(user);
 
-      expect(result).toEqual(created);
+      expect(result).toEqual({ id: 'sess-new', name: null, status: 'pending', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
       expect(db.insert).toHaveBeenCalled();
     });
 
     it('should insert with an optional name', async () => {
       const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending', name: 'My Phone' };
-
       db.returning.mockResolvedValueOnce([created]);
+      db.where.mockResolvedValueOnce([]);
       workersService.findOrProvisionWorker.mockRejectedValue(new Error('no workers'));
 
       const result = await controller.createConnection(user, { name: 'My Phone' });
 
-      expect(result).toEqual(created);
+      expect(result).toEqual({ id: 'sess-new', name: 'My Phone', status: 'pending', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
       expect(db.insert).toHaveBeenCalled();
     });
 
     it('should return the created record even if background provisioning fails', async () => {
       const created = { id: 'sess-new', userId: 'user-123', sessionName: 'u_user123_s_uuid', status: 'pending' };
-
       db.returning.mockResolvedValueOnce([created]);
+      db.where.mockResolvedValueOnce([]);
       workersService.findOrProvisionWorker.mockRejectedValue(new Error('No workers available'));
 
       const result = await controller.createConnection(user);
 
-      expect(result).toEqual(created);
+      expect(result).toEqual({ id: 'sess-new', name: null, status: 'pending', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
     });
   });
 
@@ -152,7 +152,7 @@ describe('ConnectionsController', () => {
 
       const result = await controller.getConnection('sess-1', user);
 
-      expect(result).toEqual({ ...connection, status: 'connected' });
+      expect(result).toEqual({ id: 'sess-1', name: null, status: 'connected', phoneNumber: null, engine: null, createdAt: undefined, updatedAt: undefined });
     });
 
     it('should throw NotFoundException when connection not found', async () => {

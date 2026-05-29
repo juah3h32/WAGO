@@ -1,4 +1,7 @@
-import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Logger, HttpException, HttpStatus, Inject, OnModuleInit } from '@nestjs/common';
+import { eq, isNull, sql, and } from 'drizzle-orm';
+import { wahaSessions } from '@wago/db';
+import { DRIZZLE_TOKEN } from '../database/database.module';
 
 /**
  * AntiSpamService — centralizes all WhatsApp anti-detection logic.
@@ -19,8 +22,14 @@ import { Injectable, Logger, HttpException, HttpStatus } from '@nestjs/common';
  * Wati, MessageBird, and 360dialog.
  */
 @Injectable()
-export class AntiSpamService {
+export class AntiSpamService implements OnModuleInit {
   private readonly logger = new Logger(AntiSpamService.name);
+
+  constructor(@Inject(DRIZZLE_TOKEN) private readonly db: any) {}
+
+  async onModuleInit() {
+    await this.restoreWarmupFromDb();
+  }
 
   // ─── Per-session rate-limit windows ───────────────────────────────────────
   // Key: `${sessionId}:${chatId}` → timestamps of recent sends
@@ -114,13 +123,17 @@ export class AntiSpamService {
    * tracking starts from day 0.
    */
   markSessionConnected(sessionId: string): void {
+    // In-memory warmup (fast path)
     if (!this.warmupState.has(sessionId)) {
-      this.warmupState.set(sessionId, {
-        connectedAt: Date.now(),
-        totalSent: 0,
-      });
+      this.warmupState.set(sessionId, { connectedAt: Date.now(), totalSent: 0 });
       this.logger.log(`Session ${sessionId} entered warmup mode`);
     }
+    // Persist to DB so warmup survives API restarts
+    this.db
+      .update(wahaSessions)
+      .set({ warmupConnectedAt: new Date() })
+      .where(and(eq(wahaSessions.id, sessionId), isNull(wahaSessions.warmupConnectedAt)))
+      .catch(() => { /* non-critical */ });
   }
 
   /**
@@ -283,11 +296,38 @@ export class AntiSpamService {
     const recipientW = this.getOrCreate(this.recipientWindows, key);
     recipientW.push(now);
 
-    // Warmup counter
+    // Warmup counter — in-memory
     const state = this.warmupState.get(sessionId);
-    if (state) {
-      state.totalSent++;
-    }
+    if (state) state.totalSent++;
+
+    // Persist to DB (fire-and-forget, non-critical)
+    this.db
+      .update(wahaSessions)
+      .set({ warmupTotalSent: sql`${wahaSessions.warmupTotalSent} + 1` })
+      .where(eq(wahaSessions.id, sessionId))
+      .catch(() => { /* non-critical */ });
+  }
+
+  /**
+   * Restore warmup state from DB after API restart.
+   * Call this on module init to reload any sessions that were mid-warmup.
+   */
+  async restoreWarmupFromDb(): Promise<void> {
+    try {
+      const sessions = await this.db
+        .select()
+        .from(wahaSessions)
+        .where(eq(wahaSessions.status, 'working'));
+      for (const s of sessions) {
+        if (s.warmupConnectedAt && !this.warmupState.has(s.id)) {
+          this.warmupState.set(s.id, {
+            connectedAt: s.warmupConnectedAt.getTime(),
+            totalSent: s.warmupTotalSent ?? 0,
+          });
+        }
+      }
+      this.logger.log(`Restored warmup state for ${sessions.length} sessions from DB`);
+    } catch { /* non-critical on startup */ }
   }
 
   private getOrCreate(map: Map<string, number[]>, key: string): number[] {

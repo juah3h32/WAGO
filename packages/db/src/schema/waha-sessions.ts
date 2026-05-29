@@ -22,6 +22,8 @@ export const wahaSessions = sqliteTable("waha_sessions", {
   engine: text("engine", { enum: ["NOWEB", "WEBJS", "GOWS"] })
     .notNull()
     .default("NOWEB"),
+  warmupConnectedAt: integer("warmup_connected_at", { mode: "timestamp_ms" }),
+  warmupTotalSent: integer("warmup_total_sent").notNull().default(0),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .$defaultFn(() => new Date()),
