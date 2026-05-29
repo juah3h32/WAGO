@@ -12,6 +12,7 @@ import { ConnectionsModule } from "./connections/connections.module";
 import { HealthModule } from "./health/health.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 import { EventsModule } from "./events/events.module";
+import { QueueModule } from "./queue/queue.module";
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EventsModule } from "./events/events.module";
     HealthModule,
     WebhooksModule,
     EventsModule,
+    QueueModule,
   ],
   controllers: [AppController],
   providers: [

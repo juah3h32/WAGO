@@ -5,3 +5,4 @@ export { webhookConfigs } from "./webhook-configs.js";
 export { webhookEventLogs } from "./webhook-event-logs.js";
 export { usageRecords } from "./usage-records.js";
 export { apiTokens } from "./api-tokens.js";
+export { messageQueue } from "./message-queue.js";

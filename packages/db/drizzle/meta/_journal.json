@@ -15,6 +15,20 @@
       "when": 1778524536389,
       "tag": "0001_jazzy_overlord",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1780096989904,
+      "tag": "0002_giant_wolf_cub",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1780098840974,
+      "tag": "0003_empty_magma",
+      "breakpoints": true
     }
   ]
 }
