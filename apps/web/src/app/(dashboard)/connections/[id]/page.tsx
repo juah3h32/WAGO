@@ -79,6 +79,7 @@ function ConnectionDetailPageContent() {
   const [qr, setQr] = useState<QrData | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
+  const [resettingWarmup, setResettingWarmup] = useState(false);
   const [setupSeconds, setSetupSeconds] = useState(0);
   const setupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -177,6 +178,18 @@ function ConnectionDetailPageContent() {
       setChats(chatsData ?? []);
     });
   }, [connection?.status, id]);
+
+  async function handleResetWarmup() {
+    setResettingWarmup(true);
+    try {
+      await apiFetch(`/api/connections/${id}/reset-warmup`, { method: "POST" });
+      toast("Warmup reseteado — el contador vuelve a día 0", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al resetear warmup", "error");
+    } finally {
+      setResettingWarmup(false);
+    }
+  }
 
   async function handleRestart() {
     setRestarting(true);
@@ -320,13 +333,23 @@ function ConnectionDetailPageContent() {
           {/* Actions */}
           <div className="flex items-center gap-2">
             {isConnected && (
-              <button onClick={handleRestart} disabled={restarting}
-                className="flex items-center gap-1.5 rounded-xl border border-border-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-all disabled:opacity-50">
-                <svg className={`h-3.5 w-3.5 ${restarting ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                </svg>
-                {restarting ? "Reiniciando…" : "Reiniciar"}
-              </button>
+              <>
+                <button onClick={handleRestart} disabled={restarting}
+                  className="flex items-center gap-1.5 rounded-xl border border-border-secondary px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-all disabled:opacity-50">
+                  <svg className={`h-3.5 w-3.5 ${restarting ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                  </svg>
+                  {restarting ? "Reiniciando…" : "Reiniciar"}
+                </button>
+                <button onClick={handleResetWarmup} disabled={resettingWarmup} title="Resetear límite de calentamiento (warmup)"
+                  className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/10 transition-all disabled:opacity-50">
+                  <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.362 5.214A8.252 8.252 0 0112 21 8.25 8.25 0 016.038 7.048 8.287 8.287 0 009 9.6a8.983 8.983 0 013.361-6.867 8.21 8.21 0 003 2.48z"/>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18a3.75 3.75 0 00.495-7.467 5.99 5.99 0 00-1.925 3.546 5.974 5.974 0 01-2.133-1A3.75 3.75 0 0012 18z"/>
+                  </svg>
+                  {resettingWarmup ? "Reseteando…" : "Reset warmup"}
+                </button>
+              </>
             )}
             <button onClick={handleDelete}
               className="rounded-xl border border-status-error-border px-3 py-1.5 text-xs font-semibold text-status-error-text hover:bg-status-error-bg transition-all">

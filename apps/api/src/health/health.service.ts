@@ -192,32 +192,41 @@ export class HealthService {
 
     switch (wahaStatus) {
       case 'WORKING': {
-        // Fetch the current phone number on every WORKING poll to detect phone changes.
+        // Only fetch phone / detect phone change on state transitions (non-working → working)
+        // or when the phone is not yet stored. Checking on every poll risks a false
+        // "phone changed" detection if getMe returns a slightly different format,
+        // which would incorrectly reset the warmup counter back to day 0.
+        const isTransition = dbStatus !== 'working';
+        const missingPhone = !dbSession.phoneNumber;
+
         let currentPhone: string | null = null;
-        try {
-          const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
-          currentPhone = me?.id?.replace('@c.us', '') || null;
-        } catch {
-          // Non-critical — will retry next poll
-        }
+        if (isTransition || missingPhone) {
+          try {
+            const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
+            // Normalize: strip @c.us and any leading + so comparisons are consistent
+            currentPhone = me?.id?.replace('@c.us', '').replace(/^\+/, '') || null;
+          } catch {
+            // Non-critical — will retry next poll
+          }
 
-        const phoneChanged = currentPhone && dbSession.phoneNumber && currentPhone !== dbSession.phoneNumber;
-
-        if (phoneChanged) {
-          // A different SIM was linked to this session — reset warmup so the new
-          // number starts from day 0 instead of inheriting the old number's counters.
-          this.logger.log(
-            `Session "${sessionName}" phone changed ${dbSession.phoneNumber} → ${currentPhone}, resetting warmup`,
-          );
-          this.antiSpamService.resetWarmup(dbSession.id);
+          // Detect phone change only on transitions (not on first-time phone fetch)
+          if (isTransition && !missingPhone && currentPhone) {
+            const storedPhone = dbSession.phoneNumber.replace(/^\+/, '');
+            if (currentPhone !== storedPhone) {
+              // A different SIM was linked — reset warmup so the new number starts fresh.
+              this.logger.log(
+                `Session "${sessionName}" phone changed ${dbSession.phoneNumber} → ${currentPhone}, resetting warmup`,
+              );
+              this.antiSpamService.resetWarmup(dbSession.id);
+            }
+          }
         }
 
         // Register warmup tracking when session reaches WORKING for the first time.
         // markSessionConnected is idempotent — safe to call on every poll.
         this.antiSpamService.markSessionConnected(dbSession.id);
 
-        const needsDbUpdate = dbStatus !== 'working' || !dbSession.phoneNumber || phoneChanged;
-        if (needsDbUpdate) {
+        if (isTransition || (missingPhone && currentPhone)) {
           const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
           if (currentPhone) updates.phoneNumber = currentPhone;
 

@@ -463,6 +463,24 @@ export class ConnectionsController {
     return this.mapConnection(updated);
   }
 
+  @Post(':id/reset-warmup')
+  async resetWarmup(
+    @Param('id') id: string,
+    @CurrentUser() user: { sub: string; connectionId?: string },
+  ) {
+    const [connection] = await this.db
+      .select()
+      .from(wahaSessions)
+      .where(eq(wahaSessions.id, id));
+
+    if (!connection) throw new NotFoundException('Connection not found');
+    if (connection.userId !== user.sub) throw new ForbiddenException('You do not own this connection');
+    this.enforceConnectionScope(user, id);
+
+    this.antiSpamService.resetWarmup(id);
+    return { success: true, message: 'Warmup counter reset. Connection starts fresh from day 0.' };
+  }
+
   @Get(':id/chats')
   async getChats(
     @Param('id') id: string,
