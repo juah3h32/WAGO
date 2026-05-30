@@ -9,10 +9,11 @@ import {
   UseGuards,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { eq, and } from 'drizzle-orm';
-import { apiTokens } from '@wago/db';
+import { apiTokens, wahaSessions } from '@wago/db';
 import { AuthGuard } from './auth.guard';
 import { CurrentUser } from './user.decorator';
 import { DRIZZLE_TOKEN } from '../database/database.module';
@@ -28,6 +29,7 @@ export class TokensController {
       .select({
         id: apiTokens.id,
         name: apiTokens.name,
+        connectionId: apiTokens.connectionId,
         tokenPrefix: apiTokens.tokenPrefix,
         active: apiTokens.active,
         lastUsedAt: apiTokens.lastUsedAt,
@@ -46,9 +48,23 @@ export class TokensController {
 
   @Post()
   async createToken(
-    @Body() body: { name: string },
+    @Body() body: { name: string; connectionId?: string },
     @CurrentUser() user: { sub: string },
   ) {
+    if (body.connectionId) {
+      const [conn] = await this.db
+        .select({ id: wahaSessions.id, userId: wahaSessions.userId })
+        .from(wahaSessions)
+        .where(eq(wahaSessions.id, body.connectionId));
+
+      if (!conn) {
+        throw new NotFoundException('Connection not found');
+      }
+      if (conn.userId !== user.sub) {
+        throw new ForbiddenException('You do not own this connection');
+      }
+    }
+
     const rawToken = `wh_${randomBytes(24).toString('hex')}`;
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
     const tokenPrefix = rawToken.slice(0, 10) + '...';
@@ -57,16 +73,17 @@ export class TokensController {
       .insert(apiTokens)
       .values({
         userId: user.sub,
+        connectionId: body.connectionId ?? null,
         name: body.name,
         tokenHash,
         tokenPrefix,
       })
       .returning();
 
-    // Return the raw token ONCE — it can never be retrieved again
     return {
       id: created.id,
       name: created.name,
+      connectionId: created.connectionId,
       token: rawToken,
       tokenPrefix,
       createdAt: created.createdAt,

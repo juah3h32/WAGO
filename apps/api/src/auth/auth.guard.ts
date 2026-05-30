@@ -101,7 +101,11 @@ export class AuthGuard implements CanActivate {
       .where(eq(apiTokens.id, apiToken.id))
       .catch(() => {});
 
-    request.user = { sub: apiToken.userId };
+    request.user = {
+      sub: apiToken.userId,
+      // When a token is scoped to a connection, inject it so controllers can enforce access
+      ...(apiToken.connectionId ? { connectionId: apiToken.connectionId } : {}),
+    };
     return true;
   }
 

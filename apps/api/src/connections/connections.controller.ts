@@ -74,17 +74,34 @@ export class ConnectionsController {
     };
   }
 
+  /**
+   * When an API token is scoped to a specific connection, enforce that the
+   * requested connection matches. Throws ForbiddenException otherwise.
+   */
+  private enforceConnectionScope(
+    user: { sub: string; connectionId?: string },
+    connectionId: string,
+  ): void {
+    if (user.connectionId && user.connectionId !== connectionId) {
+      throw new ForbiddenException('This API token is not authorized for this connection');
+    }
+  }
+
   @Get()
-  async listConnections(@CurrentUser() user: { sub: string }) {
+  async listConnections(@CurrentUser() user: { sub: string; connectionId?: string }) {
+    const conditions = [
+      eq(wahaSessions.userId, user.sub),
+      ne(wahaSessions.status, 'stopped'),
+    ];
+    // Token scoped to a single connection — only return that one
+    if (user.connectionId) {
+      conditions.push(eq(wahaSessions.id, user.connectionId));
+    }
+
     const results = await this.db
       .select()
       .from(wahaSessions)
-      .where(
-        and(
-          eq(wahaSessions.userId, user.sub),
-          ne(wahaSessions.status, 'stopped'),
-        ),
-      );
+      .where(and(...conditions));
 
     return results.map((c: any) => this.mapConnection(c));
   }
@@ -160,7 +177,7 @@ export class ConnectionsController {
 
   @Post()
   async createConnection(
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
     @Body() body?: { name?: string },
   ) {
     const MAX_CONNECTIONS = 10;
@@ -253,7 +270,7 @@ export class ConnectionsController {
   @Get(':id/qr')
   async getQrCode(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -267,6 +284,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
 
@@ -386,7 +404,7 @@ export class ConnectionsController {
   @Post(':id/restart')
   async restartConnection(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -400,6 +418,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
 
@@ -447,7 +466,7 @@ export class ConnectionsController {
   @Get(':id/chats')
   async getChats(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -461,6 +480,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
 
@@ -487,7 +507,7 @@ export class ConnectionsController {
   async getMessages(
     @Param('id') id: string,
     @Param('chatId') chatId: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -501,6 +521,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
 
@@ -527,7 +548,7 @@ export class ConnectionsController {
   @Get(':id/me')
   async getMe(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -541,6 +562,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
 
@@ -567,7 +589,7 @@ export class ConnectionsController {
   async getContactPicture(
     @Param('id') id: string,
     @Param('contactId') contactId: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -576,6 +598,7 @@ export class ConnectionsController {
 
     if (!connection) throw new NotFoundException('Connection not found');
     if (connection.userId !== user.sub) throw new ForbiddenException('You do not own this connection');
+    this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
     if (!worker) return { profilePictureUrl: null };
@@ -590,9 +613,9 @@ export class ConnectionsController {
   async sendText(
     @Param('id') id: string,
     @Body() body: { chatId: string; text: string; skipPresence?: boolean; replyTo?: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
 
     // Anti-spam: rate limit + warmup gate + humanized delay calculation.
     // Throws TooManyRequestsException (429) if any limit is breached.
@@ -622,9 +645,9 @@ export class ConnectionsController {
   async sendReaction(
     @Param('id') id: string,
     @Body() body: { chatId: string; messageId: string; reaction: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     await this.wahaService.sendReaction(
       worker.internalIp,
       worker.apiKeyEnc,
@@ -640,14 +663,14 @@ export class ConnectionsController {
   async getMedia(
     @Param('id') id: string,
     @Param('filename') filename: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ): Promise<StreamableFile> {
     // Sanitize filename — reject path traversal
     if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
       throw new NotFoundException('Invalid filename');
     }
 
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
 
     // Fetch from WAHA worker's internal file endpoint
     const wahaUrl = `http://${worker.internalIp}:3000/api/files/${encodeURIComponent(wahaName)}/${encodeURIComponent(filename)}`;
@@ -679,9 +702,9 @@ export class ConnectionsController {
   async markRead(
     @Param('id') id: string,
     @Body() body: { chatId: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     await this.wahaService.sendSeen(worker.internalIp, worker.apiKeyEnc, wahaName, body.chatId);
     return { success: true };
   }
@@ -690,9 +713,9 @@ export class ConnectionsController {
   async startTyping(
     @Param('id') id: string,
     @Body() body: { chatId: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     await this.wahaService.startTyping(worker.internalIp, worker.apiKeyEnc, wahaName, body.chatId);
     return { success: true };
   }
@@ -701,9 +724,9 @@ export class ConnectionsController {
   async stopTyping(
     @Param('id') id: string,
     @Body() body: { chatId: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     await this.wahaService.stopTyping(worker.internalIp, worker.apiKeyEnc, wahaName, body.chatId);
     return { success: true };
   }
@@ -712,7 +735,7 @@ export class ConnectionsController {
   async updateConnection(
     @Param('id') id: string,
     @Body() body: { name?: string },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -721,6 +744,7 @@ export class ConnectionsController {
 
     if (!connection) throw new NotFoundException('Connection not found');
     if (connection.userId !== user.sub) throw new ForbiddenException('You do not own this connection');
+    this.enforceConnectionScope(user, id);
 
     const updates: Record<string, any> = { updatedAt: new Date() };
     if (body.name !== undefined) updates.name = body.name || null;
@@ -734,14 +758,15 @@ export class ConnectionsController {
     return this.mapConnection(updated);
   }
 
-  /** Resolve connection → worker → wahaName, with ownership check */
-  private async resolveWorker(id: string, userId: string) {
+  /** Resolve connection → worker → wahaName, with ownership + scope checks */
+  private async resolveWorker(id: string, user: { sub: string; connectionId?: string }) {
+    this.enforceConnectionScope(user, id);
     const [connection] = await this.db
       .select()
       .from(wahaSessions)
       .where(eq(wahaSessions.id, id));
     if (!connection) throw new NotFoundException('Connection not found');
-    if (connection.userId !== userId) throw new ForbiddenException('You do not own this connection');
+    if (connection.userId !== user.sub) throw new ForbiddenException('You do not own this connection');
     const worker = await this.workersService.getWorkerForSession(id);
     if (!worker) throw new ServiceUnavailableException('No worker assigned');
     const wahaName = this.wahaService.resolveSessionName(connection.sessionName);
@@ -752,10 +777,10 @@ export class ConnectionsController {
   async sendImage(
     @Param('id') id: string,
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; caption?: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     assertPublicUrl(body.url);
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -770,10 +795,10 @@ export class ConnectionsController {
   async sendDocument(
     @Param('id') id: string,
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; filename?: string; caption?: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     assertPublicUrl(body.url);
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -788,10 +813,10 @@ export class ConnectionsController {
   async sendVideo(
     @Param('id') id: string,
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; caption?: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     assertPublicUrl(body.url);
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, body.caption?.length ?? 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -806,10 +831,10 @@ export class ConnectionsController {
   async sendAudio(
     @Param('id') id: string,
     @Body() body: { chatId: string; url?: string; data?: string; mimetype?: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     assertPublicUrl(body.url);
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -824,9 +849,9 @@ export class ConnectionsController {
   async sendLocation(
     @Param('id') id: string,
     @Body() body: { chatId: string; latitude: number; longitude: number; name?: string; address?: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -841,9 +866,9 @@ export class ConnectionsController {
   async sendContact(
     @Param('id') id: string,
     @Body() body: { chatId: string; contactName: string; contactPhone: string; skipPresence?: boolean },
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
-    const { worker, wahaName } = await this.resolveWorker(id, user.sub);
+    const { worker, wahaName } = await this.resolveWorker(id, user);
     const extraDelayMs = await this.antiSpamService.checkAndThrottle(id, body.chatId, 20);
     const warmupDelay = this.antiSpamService.getWarmupBatchDelay(id);
     if (warmupDelay > 0) await new Promise((r) => setTimeout(r, warmupDelay));
@@ -857,7 +882,7 @@ export class ConnectionsController {
   @Get(':id')
   async getConnection(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -871,6 +896,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     return this.mapConnection(connection);
   }
@@ -878,7 +904,7 @@ export class ConnectionsController {
   @Delete(':id')
   async deleteConnection(
     @Param('id') id: string,
-    @CurrentUser() user: { sub: string },
+    @CurrentUser() user: { sub: string; connectionId?: string },
   ) {
     const [connection] = await this.db
       .select()
@@ -892,6 +918,7 @@ export class ConnectionsController {
     if (connection.userId !== user.sub) {
       throw new ForbiddenException('You do not own this connection');
     }
+    this.enforceConnectionScope(user, id);
 
     try {
       const worker = await this.workersService.getWorkerForSession(id);
