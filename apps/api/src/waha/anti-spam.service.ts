@@ -137,6 +137,21 @@ export class AntiSpamService implements OnModuleInit {
   }
 
   /**
+   * Reset warmup state for a session — call when the linked phone number changes.
+   * Clears both in-memory tracking and persisted DB counters so the new number
+   * starts fresh at day 0 with totalSent = 0.
+   */
+  resetWarmup(sessionId: string): void {
+    this.warmupState.delete(sessionId);
+    this.logger.log(`Session ${sessionId} warmup reset (phone number changed)`);
+    this.db
+      .update(wahaSessions)
+      .set({ warmupConnectedAt: new Date(), warmupTotalSent: 0 })
+      .where(eq(wahaSessions.id, sessionId))
+      .catch(() => { /* non-critical */ });
+  }
+
+  /**
    * Check whether a session restart is safe.
    * Returns true if allowed, false if still in cooldown.
    * Call this before every resetSession / restartSession.

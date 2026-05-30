@@ -191,39 +191,46 @@ export class HealthService {
     const dbStatus = dbSession.status;
 
     switch (wahaStatus) {
-      case 'WORKING':
+      case 'WORKING': {
+        // Fetch the current phone number on every WORKING poll to detect phone changes.
+        let currentPhone: string | null = null;
+        try {
+          const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
+          currentPhone = me?.id?.replace('@c.us', '') || null;
+        } catch {
+          // Non-critical — will retry next poll
+        }
+
+        const phoneChanged = currentPhone && dbSession.phoneNumber && currentPhone !== dbSession.phoneNumber;
+
+        if (phoneChanged) {
+          // A different SIM was linked to this session — reset warmup so the new
+          // number starts from day 0 instead of inheriting the old number's counters.
+          this.logger.log(
+            `Session "${sessionName}" phone changed ${dbSession.phoneNumber} → ${currentPhone}, resetting warmup`,
+          );
+          this.antiSpamService.resetWarmup(dbSession.id);
+        }
+
         // Register warmup tracking when session reaches WORKING for the first time.
-        // AntiSpamService.markSessionConnected is idempotent — safe to call on every poll.
+        // markSessionConnected is idempotent — safe to call on every poll.
         this.antiSpamService.markSessionConnected(dbSession.id);
 
-        if (dbStatus !== 'working' || !dbSession.phoneNumber) {
+        const needsDbUpdate = dbStatus !== 'working' || !dbSession.phoneNumber || phoneChanged;
+        if (needsDbUpdate) {
           const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
+          if (currentPhone) updates.phoneNumber = currentPhone;
 
-          // Fetch phone number if we don't have it yet
-          if (!dbSession.phoneNumber) {
-            try {
-              const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
-              const phone = me?.id?.replace('@c.us', '') || null;
-              if (phone) {
-                updates.phoneNumber = phone;
-                this.logger.log(`Session "${sessionName}" phone: +${phone}`);
-              }
-            } catch {
-              // Non-critical — will retry next poll
-            }
-          }
-
-          if (dbStatus !== 'working' || updates.phoneNumber) {
-            this.logger.log(
-              `Session "${sessionName}" is WORKING in WAHA but "${dbStatus}" in DB, updating`,
-            );
-            await this.db
-              .update(wahaSessions)
-              .set(updates)
-              .where(eq(wahaSessions.id, dbSession.id));
-          }
+          this.logger.log(
+            `Session "${sessionName}" is WORKING in WAHA but "${dbStatus}" in DB, updating`,
+          );
+          await this.db
+            .update(wahaSessions)
+            .set(updates)
+            .where(eq(wahaSessions.id, dbSession.id));
         }
         break;
+      }
 
       case 'SCAN_QR_CODE':
         if (dbStatus !== 'scan_qr') {
