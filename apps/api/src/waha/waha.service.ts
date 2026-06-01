@@ -39,36 +39,35 @@ export class WahaService {
     apiKey: string,
     sessionName: string,
     webhookUrl: string,
+    force = false,
   ): Promise<void> {
     this.logger.log(
-      `Resetting session "${sessionName}" on worker ${workerUrl}`,
+      `Resetting session "${sessionName}" on worker ${workerUrl}${force ? ' (forced)' : ''}`,
     );
-    // If WAHA already has the session ready to scan, skip the destructive reset
-    try {
-      const existing = await this.getSession(workerUrl, apiKey, sessionName);
-      const safeStatuses = ['SCAN_QR_CODE', 'WORKING', 'CONNECTING', 'OPENING'];
-      if (existing?.status && safeStatuses.includes(existing.status)) {
-        this.logger.log(`Session "${sessionName}" already in ${existing.status}, skipping reset`);
-        return;
+    // Skip destructive reset only when NOT forced and session is already active.
+    // Passing force=true bypasses this check — use when session appears WORKING
+    // but is actually stuck and not sending messages.
+    if (!force) {
+      try {
+        const existing = await this.getSession(workerUrl, apiKey, sessionName);
+        const safeStatuses = ['SCAN_QR_CODE', 'WORKING', 'CONNECTING', 'OPENING'];
+        if (existing?.status && safeStatuses.includes(existing.status)) {
+          this.logger.log(`Session "${sessionName}" already in ${existing.status}, skipping reset`);
+          return;
+        }
+      } catch {
+        // No session exists yet — proceed with full reset below
       }
-    } catch {
-      // No session exists yet — proceed with full reset below
     }
     try {
       await this.stopSession(workerUrl, apiKey, sessionName);
-    } catch {
-      // Ignore — may already be stopped
-    }
+    } catch { /* may already be stopped */ }
     try {
       await this.logoutSession(workerUrl, apiKey, sessionName);
-    } catch {
-      // Ignore — clears auth state
-    }
+    } catch { /* clears auth state */ }
     try {
       await this.deleteSession(workerUrl, apiKey, sessionName);
-    } catch {
-      // Ignore — may not exist
-    }
+    } catch { /* may not exist */ }
     // start:true in createSession starts it automatically
     await this.createSession(workerUrl, apiKey, sessionName, webhookUrl);
   }

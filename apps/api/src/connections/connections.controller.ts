@@ -418,6 +418,45 @@ export class ConnectionsController {
     return this.mapConnection(updated);
   }
 
+  @Post(':id/reconnect')
+  async reconnectConnection(
+    @Param('id') id: string,
+    @CurrentUser() user: { sub: string; connectionId?: string },
+  ) {
+    const [connection] = await this.db
+      .select()
+      .from(wahaSessions)
+      .where(eq(wahaSessions.id, id));
+
+    if (!connection) throw new NotFoundException('Connection not found');
+    if (connection.userId !== user.sub) throw new ForbiddenException('You do not own this connection');
+    this.enforceConnectionScope(user, id);
+
+    const worker = await this.workersService.getWorkerForSession(id);
+    if (!worker) throw new ServiceUnavailableException('No worker assigned');
+
+    const wahaName = this.wahaService.resolveSessionName(connection.sessionName);
+    const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
+    const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
+
+    // Force full reset: stop → logout → delete → recreate, regardless of WAHA status.
+    // Use this when the session appears WORKING but is actually stuck.
+    await this.wahaService.resetSession(
+      worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl, true,
+    );
+
+    // Reset warmup so the reconnected number starts fresh
+    this.antiSpamService.resetWarmup(id);
+
+    const [updated] = await this.db
+      .update(wahaSessions)
+      .set({ status: 'scan_qr', phoneNumber: null, updatedAt: new Date() })
+      .where(eq(wahaSessions.id, id))
+      .returning();
+
+    return this.mapConnection(updated);
+  }
+
   @Post(':id/reset-warmup')
   async resetWarmup(
     @Param('id') id: string,

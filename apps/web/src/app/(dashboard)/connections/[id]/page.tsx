@@ -77,6 +77,7 @@ function ConnectionDetailPageContent() {
   const [qrError, setQrError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [resettingWarmup, setResettingWarmup] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [setupSeconds, setSetupSeconds] = useState(0);
   const [wahaConnecting, setWahaConnecting] = useState(false); // QR scanned, transitioning
   const [chats, setChats] = useState<ChatItem[]>([]);
@@ -245,6 +246,28 @@ function ConnectionDetailPageContent() {
     return () => { cancelled = true; };
   }, [selectedChat?.id, id]);
 
+  async function handleReconnect() {
+    const ok = await confirm({
+      title: "Reconectar número",
+      message: "Esto cierra la sesión de WhatsApp y muestra el QR para volver a escanear. Usa esto si la conexión aparece activa pero no envía mensajes.",
+      confirmLabel: "Reconectar",
+      destructive: false,
+    });
+    if (!ok) return;
+    setReconnecting(true);
+    prevStatusRef.current = null;
+    chatsLoadedRef.current = false;
+    mutateConn((p: Connection | null) => p ? { ...p, status: "scan_qr" } : p);
+    setChats([]); setProfile(null); setSelectedChat(null); setQr(null); setWahaConnecting(false);
+    try {
+      await apiFetch(`/api/connections/${id}/reconnect`, { method: "POST" });
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al reconectar", "error");
+    } finally {
+      setReconnecting(false);
+    }
+  }
+
   async function handleResetWarmup() {
     setResettingWarmup(true);
     try {
@@ -409,6 +432,13 @@ function ConnectionDetailPageContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                   </svg>
                   {restarting ? "Reiniciando…" : "Reiniciar"}
+                </button>
+                <button onClick={handleReconnect} disabled={reconnecting} title="Forzar reconexión completa — usar si aparece conectado pero no envía mensajes"
+                  className="flex items-center gap-1.5 rounded-xl border border-blue-500/30 px-3 py-1.5 text-xs font-semibold text-blue-400 hover:bg-blue-500/10 transition-all disabled:opacity-50">
+                  <svg className={`h-3.5 w-3.5 ${reconnecting ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"/>
+                  </svg>
+                  {reconnecting ? "Reconectando…" : "Reconectar"}
                 </button>
                 <button onClick={handleResetWarmup} disabled={resettingWarmup} title="Resetear límite de calentamiento (warmup)"
                   className="flex items-center gap-1.5 rounded-xl border border-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-400 hover:bg-amber-500/10 transition-all disabled:opacity-50">
