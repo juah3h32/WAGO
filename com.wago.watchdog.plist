@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.wago.watchdog</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>export PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin; LOG=/tmp/wago-watchdog.log; TS=$(date "+%Y-%m-%d %H:%M:%S"); if ! /usr/local/bin/docker info &gt;/dev/null 2&gt;&amp;1; then echo "[$TS] Docker no disponible" &gt;&gt; $LOG; exit 0; fi; for SVC in waha redis api; do if ! /usr/local/bin/docker compose -f /Users/govideo/Documents/WAGO/docker-compose.yml ps --status running --services 2&gt;/dev/null | grep -q "^${SVC}$"; then echo "[$TS] Levantando $SVC..." &gt;&gt; $LOG; /usr/local/bin/docker compose -f /Users/govideo/Documents/WAGO/docker-compose.yml up $SVC -d &gt;&gt; $LOG 2&gt;&amp;1; fi; done; echo "[$TS] OK" &gt;&gt; $LOG</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/wago-watchdog.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/wago-watchdog-error.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

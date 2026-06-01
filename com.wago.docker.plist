@@ -8,7 +8,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>sleep 15 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /opt/homebrew/bin/docker compose up waha redis -d</string>
+        <string>sleep 20 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /usr/local/bin/docker compose up waha redis api -d</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
@@ -23,7 +23,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
 </plist>
