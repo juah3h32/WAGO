@@ -323,13 +323,10 @@ export class ConnectionsController {
       return { connected: true };
     }
 
-    if (wahaStatus === 'CONNECTING' || wahaStatus === 'PAIRING') {
-      // QR was scanned — transitioning to WORKING. Tell frontend to show spinner.
-      return { connecting: true };
-    }
-
-    if (wahaStatus === 'SCAN_QR_CODE') {
-      // Session is ready for scanning — return the QR code
+    if (wahaStatus === 'SCAN_QR_CODE' || wahaStatus === 'CONNECTING' || wahaStatus === 'PAIRING') {
+      // Try to get the QR code first — in Evolution API, "connecting" state
+      // is used BOTH while waiting for scan AND while generating the initial QR.
+      // Only return { connecting: true } if the QR is truly not available (post-scan).
       try {
         const qr = await this.wahaService.getQrCode(
           worker.internalIp, worker.apiKeyEnc, wahaName,
@@ -337,7 +334,6 @@ export class ConnectionsController {
         return qr;
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        // WAHA transitioned to WORKING while we were fetching the QR
         if (errMsg.includes('"status":"WORKING"') || errMsg.includes('already connected')) {
           const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
           try {
@@ -347,6 +343,10 @@ export class ConnectionsController {
           } catch { /* non-critical */ }
           await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
           return { connected: true };
+        }
+        // QR not ready (503) and status is CONNECTING → QR was scanned, waiting for auth
+        if (wahaStatus === 'CONNECTING' || wahaStatus === 'PAIRING') {
+          return { connecting: true };
         }
         throw err;
       }
