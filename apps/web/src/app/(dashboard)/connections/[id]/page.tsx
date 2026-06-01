@@ -103,12 +103,14 @@ function ConnectionDetailPageContent() {
 
   // Refs used inside the polling loop (avoid stale closures)
   const prevStatusRef = useRef<string | null>(null);
-  const chatsLoadedRef = useRef(false);
+  const chatsLoadedRef = useRef(false);      // true only when chats loaded with real data
+  const lastChatsAttemptRef = useRef(0);     // timestamp of last loadChats call
   const mutateConnRef = useRef(mutateConn);
   mutateConnRef.current = mutateConn;
 
   // ─── Load chats helper ────────────────────────────────────────────────────
-  const loadChats = useCallback(async (cancelled: { v: boolean }) => {
+  const loadChats = useCallback(async (cancelled: { v: boolean }, force = false) => {
+    lastChatsAttemptRef.current = Date.now();
     setChatsLoading(true);
     try {
       const [me, chatsData] = await Promise.all([
@@ -117,8 +119,13 @@ function ConnectionDetailPageContent() {
       ]);
       if (cancelled.v) return;
       if (me) setProfile(me);
-      setChats(chatsData ?? []);
-      chatsLoadedRef.current = true;
+      const list = chatsData ?? [];
+      setChats(list);
+      // Only mark as loaded when WAHA returned actual chats.
+      // If empty (still syncing), keep chatsLoadedRef=false so the loop retries.
+      if (list.length > 0 || force) {
+        chatsLoadedRef.current = true;
+      }
     } finally {
       if (!cancelled.v) setChatsLoading(false);
     }
@@ -155,9 +162,13 @@ function ConnectionDetailPageContent() {
         return;
       }
 
-      // 3. Already connected but chats not loaded yet (e.g. page opened fresh)
+      // 3. Already connected but chats not loaded yet (page refresh or WAHA still syncing).
+      // Retry every 5s so we pick up chats as soon as WAHA finishes syncing.
       if (newStatus === "connected" && !chatsLoadedRef.current) {
-        await loadChats(cancelled);
+        const timeSinceLast = Date.now() - lastChatsAttemptRef.current;
+        if (timeSinceLast > 5_000) {
+          await loadChats(cancelled);
+        }
         return;
       }
 
@@ -539,9 +550,21 @@ function ConnectionDetailPageContent() {
               <div className="flex h-full">
                 {/* ── Chat list ── */}
                 <div className="flex w-72 shrink-0 flex-col border-r border-border-primary">
-                  <div className="border-b border-border-primary px-4 py-3">
-                    <h2 className="text-sm font-bold text-text-primary">Chats</h2>
-                    <p className="text-xs text-text-tertiary">{chats.length} conversaciones</p>
+                  <div className="border-b border-border-primary px-4 py-3 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-sm font-bold text-text-primary">Chats</h2>
+                      <p className="text-xs text-text-tertiary">{chats.length} conversaciones</p>
+                    </div>
+                    <button
+                      onClick={() => { chatsLoadedRef.current = false; lastChatsAttemptRef.current = 0; }}
+                      disabled={chatsLoading}
+                      title="Actualizar chats"
+                      className="rounded-lg p-1.5 text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-all disabled:opacity-40"
+                    >
+                      <svg className={`h-4 w-4 ${chatsLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                      </svg>
+                    </button>
                   </div>
                   <div className="flex-1 overflow-y-auto">
                     {chatsLoading ? (
