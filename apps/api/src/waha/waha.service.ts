@@ -167,6 +167,14 @@ export class WahaService {
       name: sessionName,
       start: true,
       config: {
+        // NOWEB requires store to be enabled for chat/message history APIs.
+        // WAHA ignores noweb config when using WEBJS engine.
+        noweb: {
+          store: {
+            enabled: true,
+            fullSync: true,
+          },
+        },
         webhooks: webhookUrl
           ? [{ url: webhookUrl, events: ['*'] }]
           : [],
