@@ -120,7 +120,7 @@ export class WahaService {
         const responseBody = await response.text();
         this.logger.error(`WAHA API error: ${method} ${url} returned ${response.status} - ${responseBody}`);
         // Parse WAHA error body to forward its message and status to the caller
-        let wahaMessage = `WAHA error ${response.status}`;
+        let wahaMessage = `WAHA API error ${response.status}`;
         try {
           const parsed = JSON.parse(responseBody);
           if (parsed?.message) wahaMessage = Array.isArray(parsed.message) ? parsed.message[0] : parsed.message;
