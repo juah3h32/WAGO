@@ -43,6 +43,7 @@ services:
       WEBHOOK_GLOBAL_ENABLED: "false"
       CONFIG_SESSION_PHONE_CLIENT: Wago
       CONFIG_SESSION_PHONE_NAME: Chrome
+      CONFIG_SESSION_PHONE_VERSION: ""
     volumes:
       - evolution-sessions:/evolution/instances
     networks:

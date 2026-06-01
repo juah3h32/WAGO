@@ -132,6 +132,7 @@ export class WahaService {
     const body: any = {
       instanceName: sessionName,
       integration: 'WHATSAPP-BAILEYS',
+      qrcode: true,   // triggers QR generation on create
     };
 
     if (webhookUrl) {
@@ -139,18 +140,16 @@ export class WahaService {
     }
 
     const result = await this.request<any>('POST', url, headers, body);
-
-    // Connect (get QR) immediately after create
-    try {
-      await this.request<any>('GET', this.buildUrl(workerUrl, `/instance/connect/${sessionName}`), headers);
-    } catch { /* QR will be available on next poll */ }
-
+    // QR will be in result.qrcode.base64 when ready; health/QR poll picks it up
     return this._mapInstance(result?.instance ?? result);
   }
 
   async startSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    // For Evolution API, "starting" an existing instance means calling connect
     const headers = this.buildHeaders(apiKey);
-    await this.request<any>('GET', this.buildUrl(workerUrl, `/instance/connect/${sessionName}`), headers);
+    try {
+      await this.request<any>('GET', this.buildUrl(workerUrl, `/instance/connect/${sessionName}`), headers);
+    } catch { /* QR will come on next poll */ }
   }
 
   async stopSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
@@ -194,7 +193,12 @@ export class WahaService {
   }
 
   private _mapInstance(inst: any): WahaSessionResponse {
-    const state = inst?.connectionStatus?.state ?? inst?.state ?? inst?.status;
+    // fetchInstances returns { connectionStatus: "open"|"close"|"connecting", name: "..." }
+    // connectionState returns { instance: { state: "open"|"close"|... } }
+    const state = inst?.instance?.state
+      ?? inst?.connectionStatus
+      ?? inst?.state
+      ?? inst?.status;
     return {
       name: inst?.instance?.instanceName ?? inst?.instanceName ?? inst?.name ?? 'default',
       status: mapStatus(state),
@@ -208,11 +212,13 @@ export class WahaService {
     const url = this.buildUrl(workerUrl, `/instance/connect/${sessionName}`);
     const result = await this.request<any>('GET', url, headers);
 
-    // Evolution API returns base64 QR: "data:image/png;base64,..."
-    const b64 = result?.base64 ?? result?.qrcode?.base64 ?? result?.qr;
-    if (!b64) throw new HttpException('QR not ready yet', 503);
+    // Evolution API returns: { base64: "data:image/png;base64,...", code: "2@...", count: 1 }
+    // OR on create response: result.qrcode.base64
+    const b64: string | undefined = result?.base64 ?? result?.qrcode?.base64 ?? result?.qr;
+    if (!b64 || typeof b64 !== 'string') {
+      throw new HttpException('QR not ready yet', 503);
+    }
 
-    // Strip the data: prefix if present
     const parts = b64.split(',');
     const mimeMatch = parts[0]?.match(/data:([^;]+)/);
     const mimetype = mimeMatch?.[1] ?? 'image/png';
@@ -226,14 +232,17 @@ export class WahaService {
   async getMe(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaMeResponse | null> {
     const headers = this.buildHeaders(apiKey);
     try {
-      const result = await this.request<any>('GET', this.buildUrl(workerUrl, `/instance/fetchInstances?instanceName=${sessionName}`), headers);
+      const result = await this.request<any>(
+        'GET',
+        this.buildUrl(workerUrl, `/instance/fetchInstances?instanceName=${sessionName}`),
+        headers,
+      );
       const inst = Array.isArray(result) ? result[0] : result;
-      const id = inst?.instance?.profilePictureUrl
-        ? `${inst?.instance?.profileName ?? sessionName}@s.whatsapp.net`
-        : null;
-      const profileName = inst?.instance?.profileName ?? null;
-      if (!profileName) return null;
-      return { id: id ?? `${sessionName}@s.whatsapp.net`, pushName: profileName };
+      const profileName = inst?.profileName ?? inst?.instance?.profileName ?? null;
+      const ownerJid = inst?.ownerJid ?? inst?.instance?.ownerJid ?? null;
+      if (!profileName && !ownerJid) return null;
+      const id = ownerJid ?? `${sessionName}@s.whatsapp.net`;
+      return { id, pushName: profileName ?? sessionName };
     } catch {
       return null;
     }
