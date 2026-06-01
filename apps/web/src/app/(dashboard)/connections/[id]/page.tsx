@@ -98,7 +98,13 @@ function ConnectionDetailPageContent() {
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "webhooks">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "webhooks" | "credentials">("chat");
+
+  // Credentials tab state
+  const [scopedTokens, setScopedTokens] = useState<any[]>([]);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [creatingToken, setCreatingToken] = useState(false);
+  const [newTokenValue, setNewTokenValue] = useState<string | null>(null);
 
   // Refs used inside the polling loop (avoid stale closures)
   const prevStatusRef = useRef<string | null>(null);
@@ -244,6 +250,41 @@ function ConnectionDetailPageContent() {
       .finally(() => { if (!cancelled) setMessagesLoading(false); });
     return () => { cancelled = true; };
   }, [selectedChat?.id, id]);
+
+  async function loadScopedTokens() {
+    setTokensLoading(true);
+    try {
+      const all = await apiFetch("/api/tokens");
+      setScopedTokens((all ?? []).filter((t: any) => t.connectionId === id));
+    } catch { /* ignore */ }
+    finally { setTokensLoading(false); }
+  }
+
+  async function handleCreateScopedToken() {
+    setCreatingToken(true);
+    setNewTokenValue(null);
+    try {
+      const created = await apiFetch("/api/tokens", {
+        method: "POST",
+        body: JSON.stringify({ name: `Token ${connection?.name || id.slice(0, 8)}`, connectionId: id }),
+      });
+      setNewTokenValue(created.token);
+      await loadScopedTokens();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al crear token", "error");
+    } finally { setCreatingToken(false); }
+  }
+
+  async function handleRevokeToken(tokenId: string) {
+    try {
+      await apiFetch(`/api/tokens/${tokenId}`, { method: "DELETE" });
+      setScopedTokens(p => p.filter(t => t.id !== tokenId));
+      setNewTokenValue(null);
+      toast("Token revocado", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al revocar", "error");
+    }
+  }
 
   async function handleResetWarmup() {
     setResettingWarmup(true);
@@ -493,13 +534,21 @@ function ConnectionDetailPageContent() {
         <>
           {/* Tabs */}
           <div className="flex border-b border-border-primary gap-1">
-            {(["chat", "webhooks"] as const).map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px capitalize
-                  ${activeTab === tab
+            {([
+              { key: "chat", label: "💬 Chat" },
+              { key: "webhooks", label: "🔗 Webhooks" },
+              { key: "credentials", label: "🔑 Credenciales" },
+            ] as const).map(({ key, label }) => (
+              <button key={key}
+                onClick={() => {
+                  setActiveTab(key);
+                  if (key === "credentials") loadScopedTokens();
+                }}
+                className={`px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px
+                  ${activeTab === key
                     ? "border-wa-green text-wa-green"
                     : "border-transparent text-text-tertiary hover:text-text-secondary"}`}>
-                {tab === "chat" ? "💬 Chat" : "🔗 Webhooks"}
+                {label}
               </button>
             ))}
           </div>
@@ -741,6 +790,19 @@ function ConnectionDetailPageContent() {
           )}
 
           {activeTab === "webhooks" && <WebhookList connectionId={id}/>}
+
+          {activeTab === "credentials" && (
+            <CredentialsTab
+              connectionId={id}
+              tokens={scopedTokens}
+              tokensLoading={tokensLoading}
+              newTokenValue={newTokenValue}
+              creatingToken={creatingToken}
+              onCreateToken={handleCreateScopedToken}
+              onRevokeToken={handleRevokeToken}
+              onDismissToken={() => setNewTokenValue(null)}
+            />
+          )}
         </>
       )}
 
@@ -756,6 +818,183 @@ function ConnectionDetailPageContent() {
             {restarting ? "Reiniciando…" : "Reiniciar"}
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Credentials Tab ──────────────────────────────────────────────────────────
+
+function EnvBlock({ lines }: { lines: { key: string; value: string }[] }) {
+  const text = lines.map(l => `${l.key}=${l.value}`).join("\n");
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="relative rounded-xl border border-border-secondary bg-bg-elevated">
+      <pre className="overflow-x-auto px-5 py-4 text-sm font-mono text-text-primary leading-relaxed">
+        {lines.map(l => (
+          <div key={l.key}>
+            <span className="text-wa-green">{l.key}</span>
+            <span className="text-text-tertiary">=</span>
+            <span className="text-text-secondary">{l.value}</span>
+          </div>
+        ))}
+      </pre>
+      <button
+        onClick={copy}
+        className="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-secondary px-3 py-1.5 text-xs font-medium text-text-secondary hover:bg-bg-hover transition-all"
+      >
+        {copied ? (
+          <><svg className="h-3.5 w-3.5 text-wa-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Copiado</>
+        ) : (
+          <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>Copiar</>
+        )}
+      </button>
+    </div>
+  );
+}
+
+function CredentialsTab({
+  connectionId,
+  tokens,
+  tokensLoading,
+  newTokenValue,
+  creatingToken,
+  onCreateToken,
+  onRevokeToken,
+  onDismissToken,
+}: {
+  connectionId: string;
+  tokens: any[];
+  tokensLoading: boolean;
+  newTokenValue: string | null;
+  creatingToken: boolean;
+  onCreateToken: () => void;
+  onRevokeToken: (id: string) => void;
+  onDismissToken: () => void;
+}) {
+  const apiUrl = typeof window !== "undefined"
+    ? (window.location.hostname.includes("recursomusical.com.mx")
+        ? "https://api.recursomusical.com.mx"
+        : "http://localhost:3001")
+    : "https://api.recursomusical.com.mx";
+
+  const activeToken = tokens.find(t => t.active);
+
+  return (
+    <div className="space-y-6">
+      {/* Info banner */}
+      <div className="flex items-start gap-3 rounded-2xl border border-border-primary bg-bg-secondary px-5 py-4">
+        <svg className="h-5 w-5 mt-0.5 shrink-0 text-text-tertiary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
+        </svg>
+        <div className="text-sm text-text-secondary leading-relaxed">
+          El <span className="font-mono text-text-primary text-xs bg-bg-elevated px-1.5 py-0.5 rounded">WAHOOKS_CONNECTION_ID</span> es permanente — nunca cambia aunque reinicies o cambies el número de teléfono. Solo cambia si <strong>eliminas</strong> la conexión.
+        </div>
+      </div>
+
+      {/* Token section */}
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-text-primary">Token de acceso</h3>
+          {!activeToken && (
+            <button
+              onClick={onCreateToken}
+              disabled={creatingToken}
+              className="flex items-center gap-1.5 rounded-xl bg-wa-green px-3 py-1.5 text-xs font-semibold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50"
+            >
+              {creatingToken ? (
+                <><svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Generando…</>
+              ) : (
+                <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4"/></svg>Generar token</>
+              )}
+            </button>
+          )}
+        </div>
+
+        {tokensLoading ? (
+          <div className="flex items-center gap-2 text-xs text-text-tertiary py-3">
+            <svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            Cargando tokens…
+          </div>
+        ) : activeToken ? (
+          <div className="rounded-2xl border border-border-primary bg-bg-secondary px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-text-primary">{activeToken.name}</p>
+                <p className="font-mono text-xs text-text-tertiary mt-0.5">{activeToken.tokenPrefix}</p>
+              </div>
+              <button
+                onClick={() => onRevokeToken(activeToken.id)}
+                className="text-xs text-red-400 hover:text-red-300 border border-red-500/20 rounded-lg px-3 py-1.5 hover:bg-red-500/10 transition-all"
+              >
+                Revocar
+              </button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-text-tertiary">Sin token — genera uno para acceder a esta conexión desde tu proyecto.</p>
+        )}
+
+        {/* New token banner */}
+        {newTokenValue && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+            <p className="text-xs font-semibold text-amber-400 mb-2">Guarda el token ahora — no se mostrará de nuevo</p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 break-all text-xs font-mono text-text-primary bg-bg-elevated rounded-lg px-3 py-2 border border-border-secondary">
+                {newTokenValue}
+              </code>
+              <button
+                onClick={() => navigator.clipboard.writeText(newTokenValue)}
+                className="shrink-0 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all"
+              >
+                <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>
+                </svg>
+              </button>
+            </div>
+            <button onClick={onDismissToken} className="mt-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors">
+              Ya lo guardé ✓
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* ENV block */}
+      <section>
+        <h3 className="mb-3 text-sm font-semibold text-text-primary">Variables de entorno</h3>
+        <EnvBlock lines={[
+          { key: "WAHOOKS_URL", value: apiUrl },
+          { key: "WAHOOKS_TOKEN", value: activeToken ? activeToken.tokenPrefix.replace("...", "<tu-token-completo>") : "<genera-un-token-arriba>" },
+          { key: "WAHOOKS_CONNECTION_ID", value: connectionId },
+        ]} />
+        {activeToken && newTokenValue && (
+          <p className="mt-2 text-xs text-text-tertiary">
+            Reemplaza <span className="font-mono">{activeToken.tokenPrefix.replace("...", "...")}</span> por el token completo que copiaste arriba.
+          </p>
+        )}
+        {!activeToken && (
+          <p className="mt-2 text-xs text-text-tertiary">Genera un token para ver el valor completo de <span className="font-mono">WAHOOKS_TOKEN</span>.</p>
+        )}
+      </section>
+
+      {/* ENV with full token if just created */}
+      {newTokenValue && activeToken && (
+        <section>
+          <h3 className="mb-3 text-sm font-semibold text-text-primary">Listo para copiar al .env</h3>
+          <EnvBlock lines={[
+            { key: "WAHOOKS_URL", value: apiUrl },
+            { key: "WAHOOKS_TOKEN", value: newTokenValue },
+            { key: "WAHOOKS_CONNECTION_ID", value: connectionId },
+          ]} />
+        </section>
       )}
     </div>
   );
