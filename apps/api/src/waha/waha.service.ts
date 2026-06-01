@@ -167,19 +167,9 @@ export class WahaService {
       name: sessionName,
       start: true,
       config: {
-        noweb: {
-          store: {
-            enabled: true,
-            fullSync: true,
-          },
-        },
+        // No engine-specific block — WAHA uses WHATSAPP_DEFAULT_ENGINE env var (WEBJS or NOWEB)
         webhooks: webhookUrl
-          ? [
-              {
-                url: webhookUrl,
-                events: ['*'],
-              },
-            ]
+          ? [{ url: webhookUrl, events: ['*'] }]
           : [],
       },
     });

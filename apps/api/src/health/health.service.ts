@@ -169,11 +169,12 @@ export class HealthService {
       }
 
       if (!existingStatus) {
-        // Session doesn't exist at all — create it
+        // Session doesn't exist — create it (createSession uses start:true, no need to call startSession)
         await this.wahaService.createSession(worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl);
+      } else {
+        // Session exists but STOPPED/FAILED — just start it
+        await this.wahaService.startSession(worker.internalIp, worker.apiKeyEnc, wahaName);
       }
-      // existingStatus === 'STOPPED' or 'FAILED' → just start it
-      await this.wahaService.startSession(worker.internalIp, worker.apiKeyEnc, wahaName);
 
       await this.db
         .update(wahaSessions)
