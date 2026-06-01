@@ -98,13 +98,7 @@ function ConnectionDetailPageContent() {
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTab] = useState<"chat" | "webhooks" | "credentials">("chat");
-
-  // Credentials tab state
-  const [scopedTokens, setScopedTokens] = useState<any[]>([]);
-  const [tokensLoading, setTokensLoading] = useState(false);
-  const [creatingToken, setCreatingToken] = useState(false);
-  const [newTokenValue, setNewTokenValue] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"chat" | "webhooks">("chat");
 
   // Refs used inside the polling loop (avoid stale closures)
   const prevStatusRef = useRef<string | null>(null);
@@ -250,41 +244,6 @@ function ConnectionDetailPageContent() {
       .finally(() => { if (!cancelled) setMessagesLoading(false); });
     return () => { cancelled = true; };
   }, [selectedChat?.id, id]);
-
-  async function loadScopedTokens() {
-    setTokensLoading(true);
-    try {
-      const all = await apiFetch("/api/tokens");
-      setScopedTokens((all ?? []).filter((t: any) => t.connectionId === id));
-    } catch { /* ignore */ }
-    finally { setTokensLoading(false); }
-  }
-
-  async function handleCreateScopedToken() {
-    setCreatingToken(true);
-    setNewTokenValue(null);
-    try {
-      const created = await apiFetch("/api/tokens", {
-        method: "POST",
-        body: JSON.stringify({ name: `Token ${connection?.name || id.slice(0, 8)}`, connectionId: id }),
-      });
-      setNewTokenValue(created.token);
-      await loadScopedTokens();
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Error al crear token", "error");
-    } finally { setCreatingToken(false); }
-  }
-
-  async function handleRevokeToken(tokenId: string) {
-    try {
-      await apiFetch(`/api/tokens/${tokenId}`, { method: "DELETE" });
-      setScopedTokens(p => p.filter(t => t.id !== tokenId));
-      setNewTokenValue(null);
-      toast("Token revocado", "success");
-    } catch (err) {
-      toast(err instanceof Error ? err.message : "Error al revocar", "error");
-    }
-  }
 
   async function handleResetWarmup() {
     setResettingWarmup(true);
@@ -534,21 +493,13 @@ function ConnectionDetailPageContent() {
         <>
           {/* Tabs */}
           <div className="flex border-b border-border-primary gap-1">
-            {([
-              { key: "chat", label: "💬 Chat" },
-              { key: "webhooks", label: "🔗 Webhooks" },
-              { key: "credentials", label: "🔑 Credenciales" },
-            ] as const).map(({ key, label }) => (
-              <button key={key}
-                onClick={() => {
-                  setActiveTab(key);
-                  if (key === "credentials") loadScopedTokens();
-                }}
-                className={`px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px
-                  ${activeTab === key
+            {(["chat", "webhooks"] as const).map((tab) => (
+              <button key={tab} onClick={() => setActiveTab(tab)}
+                className={`px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px capitalize
+                  ${activeTab === tab
                     ? "border-wa-green text-wa-green"
                     : "border-transparent text-text-tertiary hover:text-text-secondary"}`}>
-                {label}
+                {tab === "chat" ? "💬 Chat" : "🔗 Webhooks"}
               </button>
             ))}
           </div>
@@ -790,19 +741,6 @@ function ConnectionDetailPageContent() {
           )}
 
           {activeTab === "webhooks" && <WebhookList connectionId={id}/>}
-
-          {activeTab === "credentials" && (
-            <CredentialsTab
-              connectionId={id}
-              tokens={scopedTokens}
-              tokensLoading={tokensLoading}
-              newTokenValue={newTokenValue}
-              creatingToken={creatingToken}
-              onCreateToken={handleCreateScopedToken}
-              onRevokeToken={handleRevokeToken}
-              onDismissToken={() => setNewTokenValue(null)}
-            />
-          )}
         </>
       )}
 

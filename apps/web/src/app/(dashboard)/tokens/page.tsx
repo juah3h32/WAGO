@@ -113,21 +113,51 @@ function ConnectionPill({
   );
 }
 
+// Always return the production API URL for credentials — never localhost
+function getPublicApiUrl(): string {
+  const envUrl = import.meta.env.PUBLIC_API_URL;
+  if (envUrl && envUrl !== "undefined" && envUrl !== "") return envUrl;
+  return "https://api.recursomusical.com.mx";
+}
+
 function TokenCard({
   token,
   connections,
   onRevoke,
+  newlyCreatedValue,
 }: {
   token: ApiToken;
   connections: Connection[];
   onRevoke: (id: string) => void;
+  newlyCreatedValue?: string; // full token value, only available right after creation
 }) {
   const recent = isRecentlyUsed(token.lastUsedAt);
   const conn = connections.find((c) => c.id === token.connectionId);
   const connActive = conn?.status === "connected";
+  const [showCreds, setShowCreds] = useState(false);
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [envCopied, setEnvCopied] = useState(false);
+
+  const apiUrl = getPublicApiUrl();
+  const displayToken = newlyCreatedValue && tokenVisible
+    ? newlyCreatedValue
+    : token.tokenPrefix;
+
+  const envText = [
+    `WAGO_URL=${apiUrl}`,
+    `WAGO_TOKEN=${newlyCreatedValue || token.tokenPrefix}`,
+    ...(token.connectionId ? [`WAGO_CONNECTION_ID=${token.connectionId}`] : []),
+  ].join("\n");
+
+  function copyEnv() {
+    navigator.clipboard.writeText(envText).then(() => {
+      setEnvCopied(true);
+      setTimeout(() => setEnvCopied(false), 2000);
+    });
+  }
 
   return (
-    <div className="group relative rounded-2xl border border-border-primary bg-bg-secondary transition-all duration-150 hover:border-border-secondary hover:bg-bg-elevated hover:shadow-lg hover:shadow-black/10">
+    <div className="group relative rounded-2xl border border-border-primary bg-bg-secondary transition-all duration-150 hover:border-border-secondary">
       {/* Active pulse dot */}
       {recent && (
         <span className="absolute right-4 top-4 flex h-2 w-2">
@@ -149,22 +179,60 @@ function TokenCard({
               )}
             </div>
 
-            {/* Token prefix */}
+            {/* Token prefix + eye toggle */}
             <div className="mt-2 flex items-center gap-2">
               <code className="rounded-lg border border-border-primary bg-bg-elevated px-3 py-1 font-mono text-xs text-text-secondary">
-                {token.tokenPrefix}
+                {displayToken}
               </code>
-              <CopyButton text={token.tokenPrefix} />
+              {newlyCreatedValue && (
+                <button
+                  onClick={() => setTokenVisible(v => !v)}
+                  title={tokenVisible ? "Ocultar" : "Mostrar token"}
+                  className="rounded-lg p-1.5 text-text-tertiary hover:bg-bg-hover hover:text-text-primary transition-all"
+                >
+                  {tokenVisible ? (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                    </svg>
+                  ) : (
+                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                    </svg>
+                  )}
+                </button>
+              )}
+              <CopyButton text={displayToken} />
             </div>
           </div>
 
-          {/* Revoke button */}
-          <button
-            onClick={() => onRevoke(token.id)}
-            className="shrink-0 rounded-xl border border-red-500/20 px-3 py-1.5 text-xs font-medium text-red-400 opacity-0 transition-all group-hover:opacity-100 hover:bg-red-500/10"
-          >
-            Revocar
-          </button>
+          {/* Actions */}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            {/* Eye — toggle credentials */}
+            <button
+              onClick={() => setShowCreds(v => !v)}
+              title="Ver credenciales .env"
+              className={`rounded-lg p-2 transition-all ${showCreds ? "bg-wa-green/10 text-wa-green" : "text-text-tertiary hover:bg-bg-hover hover:text-text-primary"}`}
+            >
+              {showCreds ? (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/>
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={() => onRevoke(token.id)}
+              className="rounded-lg p-2 text-text-tertiary hover:bg-status-error-bg hover:text-status-error-text transition-all"
+              title="Revocar"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"/>
+              </svg>
+            </button>
+          </div>
         </div>
 
         {/* Divider */}
@@ -172,10 +240,7 @@ function TokenCard({
 
         {/* Bottom row */}
         <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Connection */}
           <ConnectionPill connectionId={token.connectionId} connections={connections} size="md" />
-
-          {/* Meta */}
           <div className="flex items-center gap-3 text-xs text-text-tertiary">
             <span className="flex items-center gap-1">
               <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -184,26 +249,60 @@ function TokenCard({
               {relativeTime(token.lastUsedAt)}
             </span>
             <span className="h-0.5 w-0.5 rounded-full bg-text-tertiary/40" />
-            <span>
-              {new Date(token.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}
-            </span>
+            <span>{new Date(token.createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" })}</span>
           </div>
         </div>
 
-        {/* Warning if connection is gone */}
+        {/* Credentials panel */}
+        {showCreds && (
+          <div className="mt-4 rounded-xl border border-border-secondary bg-bg-elevated overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-border-primary">
+              <span className="text-xs font-semibold text-text-secondary">Variables de entorno</span>
+              <button
+                onClick={copyEnv}
+                className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-secondary px-2.5 py-1 text-xs font-medium text-text-secondary hover:bg-bg-hover transition-all"
+              >
+                {envCopied ? (
+                  <><svg className="h-3.5 w-3.5 text-wa-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>Copiado</>
+                ) : (
+                  <><svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/></svg>Copiar</>
+                )}
+              </button>
+            </div>
+            <pre className="px-4 py-3 text-xs font-mono leading-relaxed overflow-x-auto">
+              <div><span className="text-wa-green">WAGO_URL</span><span className="text-text-tertiary">=</span><span className="text-text-secondary">{apiUrl}</span></div>
+              <div>
+                <span className="text-wa-green">WAGO_TOKEN</span><span className="text-text-tertiary">=</span>
+                <span className="text-text-secondary">{newlyCreatedValue && tokenVisible ? newlyCreatedValue : token.tokenPrefix}</span>
+                {newlyCreatedValue && (
+                  <button onClick={() => setTokenVisible(v => !v)} className="ml-2 text-text-tertiary hover:text-text-primary transition-colors">
+                    {tokenVisible
+                      ? <svg className="inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88"/></svg>
+                      : <svg className="inline h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z"/><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                    }
+                  </button>
+                )}
+              </div>
+              {token.connectionId && (
+                <div><span className="text-wa-green">WAGO_CONNECTION_ID</span><span className="text-text-tertiary">=</span><span className="text-text-secondary">{token.connectionId}</span></div>
+              )}
+            </pre>
+            {!newlyCreatedValue && (
+              <p className="px-4 pb-3 text-[10px] text-text-tertiary">El token completo solo se muestra una vez al crearlo. El prefix es suficiente para identificarlo.</p>
+            )}
+          </div>
+        )}
+
+        {/* Warnings */}
         {token.connectionId && !conn && (
           <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
-            </svg>
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
             La conexión asignada fue eliminada. Este token no puede enviar mensajes.
           </p>
         )}
         {token.connectionId && conn && !connActive && (
           <p className="mt-3 flex items-center gap-1.5 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
-            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/>
-            </svg>
+            <svg className="h-3.5 w-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
             La conexión está desconectada ({conn.status}). Reconecta el número para usar este token.
           </p>
         )}
@@ -422,7 +521,7 @@ function TokensPageContent() {
               </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {scopedTokens.map((t) => (
-                  <TokenCard key={t.id} token={t} connections={connList} onRevoke={handleRevoke} />
+                  <TokenCard key={t.id} token={t} connections={connList} onRevoke={handleRevoke} newlyCreatedValue={newlyCreated?.id === t.id ? newlyCreated.token : undefined} />
                 ))}
               </div>
             </section>
@@ -438,7 +537,7 @@ function TokensPageContent() {
               </h2>
               <div className="grid gap-3 sm:grid-cols-2">
                 {globalTokens.map((t) => (
-                  <TokenCard key={t.id} token={t} connections={connList} onRevoke={handleRevoke} />
+                  <TokenCard key={t.id} token={t} connections={connList} onRevoke={handleRevoke} newlyCreatedValue={newlyCreated?.id === t.id ? newlyCreated.token : undefined} />
                 ))}
               </div>
             </section>
