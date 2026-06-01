@@ -26,7 +26,7 @@ services:
       SERVER_TYPE: http
       SERVER_PORT: "8080"
       AUTHENTICATION_TYPE: apikey
-      AUTHENTICATION_GLOBAL_API_KEY: ${WAHA_API_KEY:-devkey}
+      AUTHENTICATION_API_KEY: ${WAHA_API_KEY:-devkey}
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
@@ -72,9 +72,9 @@ services:
       SUPABASE_URL: ${SUPABASE_URL}
       ORCHESTRATOR: local
       WAHA_HOST: evolution
+      WAHA_PORT: "8080"
       WAHA_API_KEY: ${WAHA_API_KEY:-devkey}
       WAHA_MAX_SESSIONS: 1
-      WAHA_PORT: 3000
       REDIS_URL: redis://redis:6379
       API_URL: ${API_URL:-http://localhost:3001}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
