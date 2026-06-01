@@ -8,7 +8,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>sleep 20 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /usr/local/bin/docker compose up waha redis api -d</string>
+        <string>sleep 20 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /usr/local/bin/docker compose up evolution postgres redis api -d</string>
     </array>
     <key>RunAtLoad</key>
     <true/>

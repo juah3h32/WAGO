@@ -210,21 +210,23 @@ export class WahaService {
   async getQrCode(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaQrCodeResponse> {
     const headers = this.buildHeaders(apiKey);
     const url = this.buildUrl(workerUrl, `/instance/connect/${sessionName}`);
-    const result = await this.request<any>('GET', url, headers);
 
-    // Evolution API returns: { base64: "data:image/png;base64,...", code: "2@...", count: 1 }
-    // OR on create response: result.qrcode.base64
-    const b64: string | undefined = result?.base64 ?? result?.qrcode?.base64 ?? result?.qr;
-    if (!b64 || typeof b64 !== 'string') {
-      throw new HttpException('QR not ready yet', 503);
+    // Retry up to 3 times with 1s delay — Baileys 515 restarts cause temporary QR gaps
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await this.request<any>('GET', url, headers);
+        const b64: string | undefined = result?.base64 ?? result?.qrcode?.base64 ?? result?.qr;
+        if (b64 && typeof b64 === 'string') {
+          const parts = b64.split(',');
+          const mimeMatch = parts[0]?.match(/data:([^;]+)/);
+          const mimetype = mimeMatch?.[1] ?? 'image/png';
+          const value = parts[1] ?? b64;
+          return { value, mimetype };
+        }
+      } catch { /* retry */ }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1_000));
     }
-
-    const parts = b64.split(',');
-    const mimeMatch = parts[0]?.match(/data:([^;]+)/);
-    const mimetype = mimeMatch?.[1] ?? 'image/png';
-    const value = parts[1] ?? b64;
-
-    return { value, mimetype };
+    throw new HttpException('QR not ready yet', 503);
   }
 
   // ─── Profile & presence ────────────────────────────────────────────────────
