@@ -151,21 +151,28 @@ export class HealthService {
       const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
       const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret ?? ''}`;
 
-      // WAHA 2026.5.1+ only lists non-stopped sessions in GET /api/sessions.
-      // Before creating, check if the session already exists (STOPPED) — if so just start it.
-      let sessionExists = false;
+      // WAHA 2026.5.1+ only lists non-stopped sessions in GET /api/sessions,
+      // so sessions in STOPPED/SCAN_QR_CODE may not appear in the listing.
+      // Check individual session status before deciding what to do.
+      const ALREADY_ACTIVE = ['WORKING', 'CONNECTING', 'SCAN_QR_CODE', 'PAIRING', 'OPENING'];
+      let existingStatus: string | null = null;
       try {
         const existing = await this.wahaService.getSession(worker.internalIp, worker.apiKeyEnc, wahaName);
-        if (existing?.status) {
-          sessionExists = true;
-          this.logger.log(`Session "${wahaName}" exists in WAHA with status ${existing.status} — starting instead of re-creating`);
-        }
-      } catch { /* session doesn't exist — proceed with create */ }
+        existingStatus = existing?.status ?? null;
+      } catch { /* session truly doesn't exist — proceed with create */ }
 
-      if (!sessionExists) {
-        await this.wahaService.createSession(worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl);
+      if (existingStatus && ALREADY_ACTIVE.includes(existingStatus)) {
+        // Session is already running in some form — reconcile DB state, no need to start
+        this.logger.log(`Session "${wahaName}" is already active (${existingStatus}), reconciling DB`);
+        await this.reconcileSessionStatus(worker, dbSession, existingStatus);
+        return;
       }
 
+      if (!existingStatus) {
+        // Session doesn't exist at all — create it
+        await this.wahaService.createSession(worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl);
+      }
+      // existingStatus === 'STOPPED' or 'FAILED' → just start it
       await this.wahaService.startSession(worker.internalIp, worker.apiKeyEnc, wahaName);
 
       await this.db
