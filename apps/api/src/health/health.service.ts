@@ -109,9 +109,21 @@ export class HealthService {
       await this.reconcileSessionStatus(worker, dbSession, wahaStatus);
     }
 
-    // Clean up orphan WAHA sessions that have no matching active DB record
+    // Build the complete set of expected WAHA session names across ALL workers
+    // (not just this worker) to avoid killing sessions owned by other workers.
+    // This is critical in WAHA Core mode where all DB sessions resolve to "default".
+    const allActiveSessions = await this.db
+      .select({ sessionName: wahaSessions.sessionName })
+      .from(wahaSessions)
+      .where(and(ne(wahaSessions.status, 'stopped'), ne(wahaSessions.status, 'failed')));
+
+    const allExpectedWahaNames = new Set(
+      allActiveSessions.map((s: { sessionName: string }) => this.wahaService.resolveSessionName(s.sessionName)),
+    );
+
+    // Clean up orphan WAHA sessions — only those not claimed by ANY active DB session
     for (const [wahaName] of wahaSessionMap) {
-      if (!expectedWahaNames.has(wahaName)) {
+      if (!allExpectedWahaNames.has(wahaName)) {
         this.logger.warn(
           `Orphan WAHA session "${wahaName}" on worker ${worker.id} — stopping`,
         );
