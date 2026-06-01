@@ -896,7 +896,7 @@ function CredentialsTab({
           <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"/>
         </svg>
         <div className="text-sm text-text-secondary leading-relaxed">
-          El <span className="font-mono text-text-primary text-xs bg-bg-elevated px-1.5 py-0.5 rounded">WAHOOKS_CONNECTION_ID</span> es permanente — nunca cambia aunque reinicies o cambies el número de teléfono. Solo cambia si <strong>eliminas</strong> la conexión.
+          El <span className="font-mono text-text-primary text-xs bg-bg-elevated px-1.5 py-0.5 rounded">WAGO_CONNECTION_ID</span> es permanente — nunca cambia aunque reinicies o cambies el número de teléfono. Solo cambia si <strong>eliminas</strong> la conexión.
         </div>
       </div>
 
@@ -971,9 +971,9 @@ function CredentialsTab({
       <section>
         <h3 className="mb-3 text-sm font-semibold text-text-primary">Variables de entorno</h3>
         <EnvBlock lines={[
-          { key: "WAHOOKS_URL", value: apiUrl },
-          { key: "WAHOOKS_TOKEN", value: activeToken ? activeToken.tokenPrefix.replace("...", "<tu-token-completo>") : "<genera-un-token-arriba>" },
-          { key: "WAHOOKS_CONNECTION_ID", value: connectionId },
+          { key: "WAGO_URL", value: apiUrl },
+          { key: "WAGO_TOKEN", value: activeToken ? activeToken.tokenPrefix.replace("...", "<tu-token-completo>") : "<genera-un-token-arriba>" },
+          { key: "WAGO_CONNECTION_ID", value: connectionId },
         ]} />
         {activeToken && newTokenValue && (
           <p className="mt-2 text-xs text-text-tertiary">
@@ -981,7 +981,7 @@ function CredentialsTab({
           </p>
         )}
         {!activeToken && (
-          <p className="mt-2 text-xs text-text-tertiary">Genera un token para ver el valor completo de <span className="font-mono">WAHOOKS_TOKEN</span>.</p>
+          <p className="mt-2 text-xs text-text-tertiary">Genera un token para ver el valor completo de <span className="font-mono">WAGO_TOKEN</span>.</p>
         )}
       </section>
 
@@ -990,9 +990,9 @@ function CredentialsTab({
         <section>
           <h3 className="mb-3 text-sm font-semibold text-text-primary">Listo para copiar al .env</h3>
           <EnvBlock lines={[
-            { key: "WAHOOKS_URL", value: apiUrl },
-            { key: "WAHOOKS_TOKEN", value: newTokenValue },
-            { key: "WAHOOKS_CONNECTION_ID", value: connectionId },
+            { key: "WAGO_URL", value: apiUrl },
+            { key: "WAGO_TOKEN", value: newTokenValue },
+            { key: "WAGO_CONNECTION_ID", value: connectionId },
           ]} />
         </section>
       )}
