@@ -352,7 +352,14 @@ export class ConnectionsController {
       }
     }
 
-    // STARTING / STOPPED / FAILED / null → worker is still initialising
+    // STOPPED or null: instance may have been removed by WhatsApp (device_removed).
+    // Try to get the QR anyway in case Evolution API has a fresh instance connecting.
+    if (wahaStatus === 'STOPPED' || !wahaStatus) {
+      try {
+        const qr = await this.wahaService.getQrCode(worker.internalIp, worker.apiKeyEnc, wahaName);
+        return qr;
+      } catch { /* not ready yet — fall through to 503 */ }
+    }
     throw new ServiceUnavailableException('Worker is starting up, please wait');
   }
 
