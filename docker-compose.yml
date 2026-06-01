@@ -3,7 +3,7 @@ name: wago
 services:
 
   waha:
-    image: devlikeapro/waha
+    image: devlikeapro/waha:latest
     platform: linux/amd64
     restart: unless-stopped
     ports:
@@ -11,7 +11,6 @@ services:
     environment:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-devkey}
       WHATSAPP_DEFAULT_ENGINE: NOWEB
-      # Persist session auth data across container restarts
       WAHA_SESSIONS_PATH: /app/sessions
     volumes:
       - waha-sessions:/app/sessions
