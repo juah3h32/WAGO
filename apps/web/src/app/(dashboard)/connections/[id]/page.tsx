@@ -73,16 +73,13 @@ function ConnectionDetailPageContent() {
   const { data: connection, loading, error, mutate: mutateConn } = useApiData<Connection>(
     `connection-${id}`, () => apiFetch(`/api/connections/${id}`)
   );
-  const connRef = useRef<Connection | null>(null);
-  connRef.current = connection;
-
   const [qr, setQr] = useState<QrData | null>(null);
   const [qrError, setQrError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [resettingWarmup, setResettingWarmup] = useState(false);
   const [setupSeconds, setSetupSeconds] = useState(0);
-  const setupTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [chats, setChats] = useState<ChatItem[]>([]);
+  const [chatsLoading, setChatsLoading] = useState(false);
   const [profile, setProfile] = useState<WaProfile | null>(null);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -102,6 +99,126 @@ function ConnectionDetailPageContent() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "webhooks">("chat");
 
+  // Refs used inside the polling loop (avoid stale closures)
+  const prevStatusRef = useRef<string | null>(null);
+  const chatsLoadedRef = useRef(false);
+  const mutateConnRef = useRef(mutateConn);
+  mutateConnRef.current = mutateConn;
+
+  // ─── Load chats helper ────────────────────────────────────────────────────
+  const loadChats = useCallback(async (cancelled: { v: boolean }) => {
+    setChatsLoading(true);
+    try {
+      const [me, chatsData] = await Promise.all([
+        apiFetch(`/api/connections/${id}/me`).catch(() => null),
+        apiFetch(`/api/connections/${id}/chats`).catch(() => []),
+      ]);
+      if (cancelled.v) return;
+      if (me) setProfile(me);
+      setChats(chatsData ?? []);
+      chatsLoadedRef.current = true;
+    } finally {
+      if (!cancelled.v) setChatsLoading(false);
+    }
+  }, [id]);
+
+  // ─── Single master polling loop ───────────────────────────────────────────
+  // One interval handles both connection status AND QR polling.
+  // Explicit transition detection via prevStatusRef — no competing effects.
+  useEffect(() => {
+    const cancelled = { v: false };
+    let countdown: ReturnType<typeof setInterval> | null = null;
+
+    async function tick() {
+      // 1. Fetch fresh connection state
+      let conn: Connection | null = null;
+      try { conn = await apiFetch(`/api/connections/${id}`); } catch { return; }
+      if (cancelled.v || !conn) return;
+
+      const newStatus = conn.status;
+      const prevStatus = prevStatusRef.current;
+      prevStatusRef.current = newStatus;
+
+      // Update component state
+      mutateConnRef.current(conn);
+
+      // 2. Transition → connected: clear QR, load chats immediately
+      if (newStatus === "connected" && prevStatus !== "connected") {
+        setQr(null);
+        setQrError(null);
+        setSetupSeconds(0);
+        if (countdown) { clearInterval(countdown); countdown = null; }
+        chatsLoadedRef.current = false; // force reload on reconnect
+        await loadChats(cancelled);
+        return;
+      }
+
+      // 3. Already connected but chats not loaded yet (e.g. page opened fresh)
+      if (newStatus === "connected" && !chatsLoadedRef.current) {
+        await loadChats(cancelled);
+        return;
+      }
+
+      // 4. Scanning/pending: poll QR + run countdown
+      if (newStatus === "scan_qr" || newStatus === "pending") {
+        // Start countdown if not running
+        if (!countdown) {
+          setSetupSeconds(0);
+          countdown = setInterval(() => setSetupSeconds(s => s + 1), 1000);
+        }
+
+        try {
+          const qrData = await apiFetch(`/api/connections/${id}/qr`);
+          if (cancelled.v) return;
+
+          if (qrData?.connected) {
+            // QR scanned — transition to connected
+            const fresh: Connection = { ...conn, status: "connected" };
+            mutateConnRef.current(fresh);
+            prevStatusRef.current = "connected";
+            setQr(null);
+            setQrError(null);
+            setSetupSeconds(0);
+            if (countdown) { clearInterval(countdown); countdown = null; }
+            chatsLoadedRef.current = false;
+            await loadChats(cancelled);
+          } else if (qrData?.value) {
+            setQr(qrData);
+            setQrError(null);
+          }
+        } catch (err) {
+          if (!cancelled.v) setQrError(err instanceof Error ? err.message : "Error al cargar QR");
+        }
+        return;
+      }
+
+      // 5. Not scanning: ensure QR is cleared
+      if (qr) { setQr(null); setQrError(null); }
+      if (countdown) { clearInterval(countdown); countdown = null; setSetupSeconds(0); }
+    }
+
+    // Run immediately, then every 2.5s
+    tick();
+    const t = setInterval(tick, 2500);
+
+    return () => {
+      cancelled.v = true;
+      clearInterval(t);
+      if (countdown) clearInterval(countdown);
+    };
+  }, [id, loadChats]); // loadChats is stable (only depends on id)
+
+  // Update name input when connection loads
+  useEffect(() => {
+    if (connection?.name && !customName) setCustomName(connection.name);
+  }, [connection?.name]);
+
+  // fetchConn exposed for restart/reset actions
+  const fetchConn = useCallback(async () => {
+    try { const d = await apiFetch(`/api/connections/${id}`); mutateConn(d); return d as Connection; }
+    catch { return null; }
+  }, [id, mutateConn]);
+
   // Load messages when chat selected
   useEffect(() => {
     if (!selectedChat || !id) return;
@@ -120,65 +237,6 @@ function ConnectionDetailPageContent() {
     return () => { cancelled = true; };
   }, [selectedChat?.id, id]);
 
-  useEffect(() => {
-    if (connection?.name && !customName) setCustomName(connection.name);
-  }, [connection?.name]);
-
-  const fetchConn = useCallback(async () => {
-    try { const d = await apiFetch(`/api/connections/${id}`); mutateConn(d); return d as Connection; }
-    catch { return null; }
-  }, [id, mutateConn]);
-
-  const fetchQr = useCallback(async () => {
-    try {
-      const d = await apiFetch(`/api/connections/${id}/qr`);
-      if (d.connected) { mutateConn((p: Connection | null) => p ? { ...p, status: "connected" } : p); setQr(null); setQrError(null); return; }
-      setQr(d); setQrError(null);
-      // QR loaded — stop timer
-      if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; setSetupSeconds(0); }
-    } catch (err) { setQrError(err instanceof Error ? err.message : "Error al cargar QR"); }
-  }, [id, mutateConn]);
-
-  // Poll connection status when pending/scan_qr
-  useEffect(() => {
-    const t = setInterval(() => {
-      const s = connRef.current?.status;
-      if (s === "scan_qr" || s === "pending") fetchConn();
-    }, 2000);
-    return () => clearInterval(t);
-  }, [fetchConn]);
-
-  // Poll QR + setup countdown timer
-  useEffect(() => {
-    if (!connection) return;
-    if (connection.status === "scan_qr" || connection.status === "pending") {
-      fetchQr();
-      const t = setInterval(fetchQr, 3000);
-      // Start elapsed-seconds counter so user sees progress
-      setSetupSeconds(0);
-      setupTimerRef.current = setInterval(() => setSetupSeconds(s => s + 1), 1000);
-      return () => {
-        clearInterval(t);
-        if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; }
-      };
-    } else {
-      setQr(null); setQrError(null); setSetupSeconds(0);
-      if (setupTimerRef.current) { clearInterval(setupTimerRef.current); setupTimerRef.current = null; }
-    }
-  }, [connection?.status, fetchQr]);
-
-  // Load chats when connected
-  useEffect(() => {
-    if (connection?.status !== "connected") return;
-    Promise.all([
-      apiFetch(`/api/connections/${id}/me`).catch(() => null),
-      apiFetch(`/api/connections/${id}/chats`).catch(() => []),
-    ]).then(([me, chatsData]) => {
-      if (me) setProfile(me);
-      setChats(chatsData ?? []);
-    });
-  }, [connection?.status, id]);
-
   async function handleResetWarmup() {
     setResettingWarmup(true);
     try {
@@ -193,8 +251,11 @@ function ConnectionDetailPageContent() {
 
   async function handleRestart() {
     setRestarting(true);
+    // Reset state so the master loop detects transition fresh
+    prevStatusRef.current = null;
+    chatsLoadedRef.current = false;
     mutateConn((p: Connection | null) => p ? { ...p, status: "scan_qr" } : p);
-    setChats([]); setProfile(null); setSelectedChat(null);
+    setChats([]); setProfile(null); setSelectedChat(null); setQr(null);
     try {
       await apiFetch(`/api/connections/${id}/restart`, { method: "POST" });
       await fetchConn();
@@ -441,7 +502,15 @@ function ConnectionDetailPageContent() {
                     <p className="text-xs text-text-tertiary">{chats.length} conversaciones</p>
                   </div>
                   <div className="flex-1 overflow-y-auto">
-                    {chats.length === 0 ? (
+                    {chatsLoading ? (
+                      <div className="flex h-full flex-col items-center justify-center gap-3">
+                        <svg className="h-6 w-6 animate-spin text-wa-green" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                          <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                        </svg>
+                        <p className="text-xs text-text-tertiary">Cargando chats…</p>
+                      </div>
+                    ) : chats.length === 0 ? (
                       <div className="flex h-full items-center justify-center p-6 text-center">
                         <p className="text-xs text-text-tertiary">No hay chats disponibles</p>
                       </div>
