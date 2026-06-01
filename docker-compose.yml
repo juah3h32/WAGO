@@ -22,6 +22,13 @@ services:
       - redis
     ports:
       - "3002:8080"
+    # Use host network to avoid Docker NAT dropping long-lived WhatsApp WebSocket connections
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    sysctls:
+      - net.ipv4.tcp_keepalive_time=60
+      - net.ipv4.tcp_keepalive_intvl=10
+      - net.ipv4.tcp_keepalive_probes=6
     environment:
       SERVER_TYPE: http
       SERVER_PORT: "8080"
