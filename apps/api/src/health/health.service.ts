@@ -112,10 +112,12 @@ export class HealthService {
     // Build the complete set of expected WAHA session names across ALL workers
     // (not just this worker) to avoid killing sessions owned by other workers.
     // This is critical in WAHA Core mode where all DB sessions resolve to "default".
+    // Include failed sessions in the protection set — only 'stopped' sessions truly
+    // release their WAHA slot. Failed sessions may still be restarted by the user.
     const allActiveSessions = await this.db
       .select({ sessionName: wahaSessions.sessionName })
       .from(wahaSessions)
-      .where(and(ne(wahaSessions.status, 'stopped'), ne(wahaSessions.status, 'failed')));
+      .where(ne(wahaSessions.status, 'stopped'));
 
     const allExpectedWahaNames = new Set(
       allActiveSessions.map((s: { sessionName: string }) => this.wahaService.resolveSessionName(s.sessionName)),
