@@ -78,6 +78,7 @@ function ConnectionDetailPageContent() {
   const [restarting, setRestarting] = useState(false);
   const [resettingWarmup, setResettingWarmup] = useState(false);
   const [setupSeconds, setSetupSeconds] = useState(0);
+  const [wahaConnecting, setWahaConnecting] = useState(false); // QR scanned, transitioning
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [chatsLoading, setChatsLoading] = useState(false);
   const [profile, setProfile] = useState<WaProfile | null>(null);
@@ -172,17 +173,24 @@ function ConnectionDetailPageContent() {
           if (cancelled.v) return;
 
           if (qrData?.connected) {
-            // QR scanned — transition to connected
+            // WAHA WORKING — transition to connected
             const fresh: Connection = { ...conn, status: "connected" };
             mutateConnRef.current(fresh);
             prevStatusRef.current = "connected";
             setQr(null);
             setQrError(null);
+            setWahaConnecting(false);
             setSetupSeconds(0);
             if (countdown) { clearInterval(countdown); countdown = null; }
             chatsLoadedRef.current = false;
             await loadChats(cancelled);
+          } else if (qrData?.connecting) {
+            // QR scanned — WAHA is CONNECTING (transitioning). Show spinner, keep polling.
+            setQr(null);
+            setQrError(null);
+            setWahaConnecting(true);
           } else if (qrData?.value) {
+            setWahaConnecting(false);
             setQr(qrData);
             setQrError(null);
           }
@@ -430,7 +438,7 @@ function ConnectionDetailPageContent() {
           <div className="p-6 flex flex-col sm:flex-row items-center gap-8">
             {/* QR display */}
             <div className="shrink-0">
-              {qr ? (
+              {qr && !wahaConnecting ? (
                 <div className="rounded-2xl bg-white p-3 shadow-xl">
                   <img src={`data:${qr.mimetype};base64,${qr.value}`} alt="QR Code" className="h-52 w-52 rounded-xl"/>
                 </div>
@@ -441,9 +449,13 @@ function ConnectionDetailPageContent() {
                     <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
                   <p className="text-xs text-text-tertiary text-center px-4">
-                    {setupSeconds > 0 ? `Iniciando sesión… ${setupSeconds}s` : "Iniciando sesión…"}
+                    {wahaConnecting
+                      ? "QR escaneado — conectando…"
+                      : setupSeconds > 0
+                        ? `Iniciando sesión… ${setupSeconds}s`
+                        : "Iniciando sesión…"}
                   </p>
-                  {setupSeconds >= 15 && (
+                  {!wahaConnecting && setupSeconds >= 15 && (
                     <button
                       onClick={handleRestart}
                       disabled={restarting}

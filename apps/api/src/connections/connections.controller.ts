@@ -301,39 +301,43 @@ export class ConnectionsController {
       connection.sessionName,
     );
 
-    // Each frontend poll starts a new 10-attempt retry loop.
-    // After a QR is returned successfully, peek at session to detect if the user scanned.
-    for (let attempt = 0; attempt < 10; attempt++) {
-      try {
-        // Before fetching QR, check if session is already past scanning phase
-        if (attempt === 0) {
-          try {
-            const preCheck = await this.wahaService.getSession(
-              worker.internalIp, worker.apiKeyEnc, wahaName,
-            );
-            if (preCheck.status === 'WORKING') {
-              const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
-              try {
-                const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
-                const phone = me?.id?.replace('@c.us', '') || null;
-                if (phone) updates.phoneNumber = phone;
-              } catch { /* non-critical */ }
-              await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
-              return { connected: true };
-            }
-            if (preCheck.status !== 'SCAN_QR_CODE') {
-              // Transitioning — wait and retry
-            }
-          } catch { /* pre-check failed, continue */ }
-        }
+    // Non-blocking: check WAHA status once and respond immediately.
+    // The frontend polls every 2.5s — no need for server-side retry loops.
+    let wahaStatus: string | null = null;
+    try {
+      const session = await this.wahaService.getSession(
+        worker.internalIp, worker.apiKeyEnc, wahaName,
+      );
+      wahaStatus = session?.status ?? null;
+    } catch { /* worker not ready yet */ }
 
+    if (wahaStatus === 'WORKING') {
+      // Update DB and return connected
+      const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
+      try {
+        const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
+        const phone = me?.id?.replace('@c.us', '') || null;
+        if (phone) updates.phoneNumber = phone;
+      } catch { /* non-critical */ }
+      await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
+      return { connected: true };
+    }
+
+    if (wahaStatus === 'CONNECTING' || wahaStatus === 'PAIRING') {
+      // QR was scanned — transitioning to WORKING. Tell frontend to show spinner.
+      return { connecting: true };
+    }
+
+    if (wahaStatus === 'SCAN_QR_CODE') {
+      // Session is ready for scanning — return the QR code
+      try {
         const qr = await this.wahaService.getQrCode(
           worker.internalIp, worker.apiKeyEnc, wahaName,
         );
         return qr;
       } catch (err) {
-        // If WAHA says the session is already WORKING, return connected immediately
         const errMsg = err instanceof Error ? err.message : String(err);
+        // WAHA transitioned to WORKING while we were fetching the QR
         if (errMsg.includes('"status":"WORKING"') || errMsg.includes('already connected')) {
           const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
           try {
@@ -344,61 +348,12 @@ export class ConnectionsController {
           await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
           return { connected: true };
         }
-
-        // Between attempts when QR fails, peek at session status
-        if (attempt >= 2 && attempt % 2 === 1) {
-          try {
-            const peek = await this.wahaService.getSession(
-              worker.internalIp, worker.apiKeyEnc, wahaName,
-            );
-            if (peek.status === 'WORKING') {
-              const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
-              try {
-                const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
-                const phone = me?.id?.replace('@c.us', '') || null;
-                if (phone) updates.phoneNumber = phone;
-              } catch { /* non-critical */ }
-              await this.db.update(wahaSessions).set(updates).where(eq(wahaSessions.id, id));
-              return { connected: true };
-            }
-          } catch { /* peek failed, keep retrying */ }
-        }
-        if (attempt < 9) {
-          await new Promise((r) => setTimeout(r, 2000));
-          continue;
-        }
+        throw err;
       }
     }
 
-    // All QR attempts exhausted — final session status check
-    try {
-      const session = await this.wahaService.getSession(
-        worker.internalIp,
-        worker.apiKeyEnc,
-        wahaName,
-      );
-      if (session.status === 'WORKING') {
-        const updates: Record<string, any> = { status: 'working', updatedAt: new Date() };
-        try {
-          const me = await this.wahaService.getMe(worker.internalIp, worker.apiKeyEnc, wahaName);
-          const phone = me?.id?.replace('@c.us', '') || null;
-          if (phone) updates.phoneNumber = phone;
-        } catch { /* non-critical */ }
-        await this.db
-          .update(wahaSessions)
-          .set(updates)
-          .where(eq(wahaSessions.id, id));
-        return { connected: true };
-      }
-      // Do NOT reset here — the health check handles FAILED/STOPPED recovery.
-      // Resetting in the QR endpoint can destroy an authenticated session
-      // that is mid-transition (SCAN_QR_CODE → CONNECTING → WORKING).
-    } catch (err) {
-      // Session check also failed — worker is genuinely unavailable
-    }
-    throw new ServiceUnavailableException(
-      'Worker is starting up, please wait',
-    );
+    // STARTING / STOPPED / FAILED / null → worker is still initialising
+    throw new ServiceUnavailableException('Worker is starting up, please wait');
   }
 
   @Post(':id/restart')

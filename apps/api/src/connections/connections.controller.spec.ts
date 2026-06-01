@@ -177,6 +177,8 @@ describe('ConnectionsController', () => {
 
       db.where.mockResolvedValue([connection]);
       workersService.getWorkerForSession.mockResolvedValue(worker);
+      // New flow: getSession is called first to determine WAHA state
+      wahaService.getSession.mockResolvedValue({ status: 'SCAN_QR_CODE' });
       wahaService.getQrCode.mockResolvedValue(qrData);
 
       const result = await controller.getQrCode('sess-1', user);
