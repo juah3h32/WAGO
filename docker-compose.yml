@@ -4,12 +4,17 @@ services:
 
   waha:
     image: devlikeapro/waha
+    platform: linux/amd64
     restart: unless-stopped
     ports:
       - "3002:3000"
     environment:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-devkey}
       WHATSAPP_DEFAULT_ENGINE: NOWEB
+      # Persist session auth data across container restarts
+      WAHA_SESSIONS_PATH: /app/sessions
+    volumes:
+      - waha-sessions:/app/sessions
     networks:
       - internal
 
@@ -52,3 +57,6 @@ services:
 networks:
   internal:
     driver: bridge
+
+volumes:
+  waha-sessions:
