@@ -22,15 +22,21 @@ describe('WahaService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WahaService,
-        { provide: ConfigService, useValue: { get: jest.fn((key: string, def: string) => key === 'WAHA_PORT' ? '3000' : (def ?? '1')) } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string, def: string) => {
+              if (key === 'WAHA_PORT') return '8080';
+              if (key === 'WAHA_MAX_SESSIONS') return '1';
+              return def ?? '1';
+            }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<WahaService>(WahaService);
-
-    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
-      mockFetchResponse({}),
-    );
+    fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(mockFetchResponse({}));
   });
 
   afterEach(() => {
@@ -38,107 +44,85 @@ describe('WahaService', () => {
   });
 
   describe('createSession', () => {
-    it('should build correct URL, headers, and body', async () => {
-      const responseData = { name: 'test-session', status: 'STARTING' };
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse(responseData));
+    it('should call Evolution API create endpoint with correct URL and headers', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ instance: { instanceName: 'test-session' } }));
 
-      const result = await service.createSession(workerUrl, apiKey, 'test-session', 'https://hooks.example.com/wh');
+      await service.createSession(workerUrl, apiKey, 'test-session', 'https://hooks.example.com/wh');
 
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
       const [url, options] = fetchSpy.mock.calls[0];
-
-      expect(url).toBe('http://10.0.0.1:3000/api/sessions');
+      expect(url).toBe('http://10.0.0.1:8080/instance/create');
       expect(options.method).toBe('POST');
-      expect(options.headers).toEqual({
-        'X-Api-Key': 'test-api-key',
-        'Content-Type': 'application/json',
-      });
+      expect(options.headers['apikey']).toBe(apiKey);
 
       const parsedBody = JSON.parse(options.body);
-      expect(parsedBody.name).toBe('test-session');
-      expect(parsedBody.config.webhooks).toEqual([
-        { url: 'https://hooks.example.com/wh', events: ['*'] },
-      ]);
-
-      expect(result).toEqual(responseData);
+      expect(parsedBody.instanceName).toBe('test-session');
+      expect(parsedBody.webhook.url).toBe('https://hooks.example.com/wh');
     });
 
-    it('should send empty webhooks array when no webhookUrl provided', async () => {
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse({ name: 'sess', status: 'STARTING' }));
+    it('should create session without webhook when no webhookUrl provided', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ instance: { instanceName: 'sess' } }));
 
       await service.createSession(workerUrl, apiKey, 'sess');
 
       const parsedBody = JSON.parse(fetchSpy.mock.calls[0][1].body);
-      expect(parsedBody.config.webhooks).toEqual([]);
+      expect(parsedBody.webhook).toBeUndefined();
     });
 
-    it('should return parsed response', async () => {
-      const responseData = { name: 'my-session', status: 'WORKING' as const };
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse(responseData));
+    it('should return mapped session response', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ instance: { instanceName: 'my-session' }, connectionStatus: { state: 'open' } }));
 
       const result = await service.createSession(workerUrl, apiKey, 'my-session');
-      expect(result).toEqual(responseData);
+      expect(result.name).toBe('my-session');
     });
   });
 
   describe('startSession', () => {
-    it('should use POST method and correct URL', async () => {
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse(''));
+    it('should call Evolution API connect endpoint with GET', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ base64: 'data:image/png;base64,abc' }));
 
       await service.startSession(workerUrl, apiKey, 'my-session');
 
       const [url, options] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://10.0.0.1:3000/api/sessions/my-session/start');
-      expect(options.method).toBe('POST');
-      expect(options.headers['X-Api-Key']).toBe(apiKey);
-    });
-
-    it('should encode special characters in session name', async () => {
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse(''));
-
-      await service.startSession(workerUrl, apiKey, 'session with spaces');
-
-      const [url] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://10.0.0.1:3000/api/sessions/session%20with%20spaces/start');
+      expect(url).toBe('http://10.0.0.1:8080/instance/connect/my-session');
+      expect(options.method).toBe('GET');
+      expect(options.headers['apikey']).toBe(apiKey);
     });
   });
 
   describe('stopSession', () => {
-    it('should use POST method and correct URL', async () => {
-      fetchSpy.mockResolvedValueOnce(mockFetchResponse(''));
+    it('should call Evolution API logout endpoint', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse(''));
 
       await service.stopSession(workerUrl, apiKey, 'my-session');
 
       const [url, options] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://10.0.0.1:3000/api/sessions/my-session/stop');
-      expect(options.method).toBe('POST');
+      expect(url).toBe('http://10.0.0.1:8080/instance/logout/my-session');
+      expect(options.method).toBe('DELETE');
     });
   });
 
   describe('getQrCode', () => {
-    it('should use correct URL path and return base64-encoded image', async () => {
-      const rawBytes = Buffer.from('fake-qr-image-data');
-      fetchSpy.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        arrayBuffer: jest.fn().mockResolvedValue(rawBytes.buffer.slice(rawBytes.byteOffset, rawBytes.byteOffset + rawBytes.byteLength)),
-        headers: { get: jest.fn().mockReturnValue('image/png') },
-      } as unknown as Response);
+    it('should call connect endpoint and parse base64 QR', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ base64: 'data:image/png;base64,abc123' }));
 
       const result = await service.getQrCode(workerUrl, apiKey, 'my-session');
 
       const [url] = fetchSpy.mock.calls[0];
-      expect(url).toBe('http://10.0.0.1:3000/api/my-session/auth/qr');
+      expect(url).toBe('http://10.0.0.1:8080/instance/connect/my-session');
       expect(result.mimetype).toBe('image/png');
-      expect(result.value).toBe(rawBytes.toString('base64'));
+      expect(result.value).toBe('abc123');
+    });
+
+    it('should throw 503 when QR not ready', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({ status: 'connecting' }));
+
+      await expect(service.getQrCode(workerUrl, apiKey, 'my-session')).rejects.toThrow();
     });
   });
 
   describe('error handling', () => {
     it('should throw on HTTP errors with descriptive message', async () => {
-      fetchSpy.mockResolvedValueOnce(
-        mockFetchResponse('Not Found', 404, false),
-      );
+      fetchSpy.mockResolvedValueOnce(mockFetchResponse('Not Found', 404, false));
 
       await expect(
         service.createSession(workerUrl, apiKey, 'fail-session'),
@@ -161,6 +145,36 @@ describe('WahaService', () => {
       await expect(
         service.createSession(workerUrl, apiKey, 'err-session'),
       ).rejects.toThrow('Network failure');
+    });
+  });
+
+  describe('downloadMediaByMessageKey', () => {
+    it('should call Evolution API getBase64FromMediaMessage with the correct key', async () => {
+      fetchSpy.mockResolvedValue(mockFetchResponse({
+        base64: 'abc123',
+        mimetype: 'application/pdf',
+        fileName: 'doc.pdf',
+        mediaType: 'document',
+      }));
+
+      const result = await service.downloadMediaByMessageKey(
+        workerUrl, apiKey, 'default',
+        'MSG_ID_001', '5521999@s.whatsapp.net', false,
+      );
+
+      const [url, options] = fetchSpy.mock.calls[0];
+      expect(url).toBe('http://10.0.0.1:8080/chat/getBase64FromMediaMessage/default');
+      expect(options.method).toBe('POST');
+      expect(options.headers['apikey']).toBe(apiKey);
+
+      const body = JSON.parse(options.body);
+      expect(body.message.key.id).toBe('MSG_ID_001');
+      expect(body.message.key.remoteJid).toBe('5521999@s.whatsapp.net');
+      expect(body.message.key.fromMe).toBe(false);
+
+      expect(result.base64).toBe('abc123');
+      expect(result.mimetype).toBe('application/pdf');
+      expect(result.fileName).toBe('doc.pdf');
     });
   });
 });

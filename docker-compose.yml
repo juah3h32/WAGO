@@ -19,7 +19,7 @@ services:
     platform: linux/amd64
     restart: unless-stopped
     ports:
-      - "3002:3000"
+      - "3003:3000"
     environment:
       WHATSAPP_API_KEY: ${WAHA_API_KEY:-devkey}
       WHATSAPP_DEFAULT_ENGINE: NOWEB
@@ -30,13 +30,16 @@ services:
       - internal
 
   evolution:
-    image: atendai/evolution-api:latest
+    # Build from evolution-foundation/evolution-api source (Baileys 7.x)
+    build:
+      context: ./services/evolution-api
+      dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
       - postgres
       - redis
     ports:
-      - "3003:8080"
+      - "3002:8080"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     sysctls:
@@ -49,7 +52,6 @@ services:
       AUTHENTICATION_TYPE: apikey
       AUTHENTICATION_API_KEY: ${WAHA_API_KEY:-devkey}
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
-      DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: postgresql
       DATABASE_CONNECTION_URI: "postgresql://evolution:evolution@postgres:5432/evolution"
       DATABASE_CONNECTION_CLIENT_NAME: evolution_db
@@ -84,7 +86,7 @@ services:
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     depends_on:
-      - waha
+      - evolution
       - redis
     environment:
       NODE_ENV: production
@@ -93,8 +95,8 @@ services:
       TURSO_AUTH_TOKEN: ${TURSO_AUTH_TOKEN}
       SUPABASE_URL: ${SUPABASE_URL}
       ORCHESTRATOR: local
-      WAHA_HOST: waha
-      WAHA_PORT: "3000"
+      WAHA_HOST: evolution
+      WAHA_PORT: "8080"
       WAHA_API_KEY: ${WAHA_API_KEY:-devkey}
       WAHA_MAX_SESSIONS: 1
       REDIS_URL: redis://redis:6379

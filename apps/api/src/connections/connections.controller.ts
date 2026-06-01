@@ -5,6 +5,7 @@ import {
   Patch,
   Delete,
   Param,
+  Query,
   Body,
   Inject,
   UseGuards,
@@ -678,43 +679,34 @@ export class ConnectionsController {
     return { success: true };
   }
 
-  @Get(':id/media/:filename')
+  @Get(':id/media/:messageId')
   async getMedia(
     @Param('id') id: string,
-    @Param('filename') filename: string,
+    @Param('messageId') messageId: string,
+    @Query('remoteJid') remoteJid: string,
+    @Query('fromMe') fromMeStr: string,
     @CurrentUser() user: { sub: string; connectionId?: string },
   ): Promise<StreamableFile> {
-    // Sanitize filename — reject path traversal
-    if (filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
-      throw new NotFoundException('Invalid filename');
-    }
+    if (!remoteJid) throw new BadRequestException('remoteJid query param required');
 
     const { worker, wahaName } = await this.resolveWorker(id, user);
 
-    // Fetch from WAHA worker's internal file endpoint
-    const wahaUrl = `http://${worker.internalIp}:3000/api/files/${encodeURIComponent(wahaName)}/${encodeURIComponent(filename)}`;
-    const wahaRes = await fetch(wahaUrl, {
-      headers: { 'X-Api-Key': worker.apiKeyEnc },
+    const fromMe = fromMeStr === 'true';
+    const result = await this.wahaService.downloadMediaByMessageKey(
+      worker.internalIp, worker.apiKeyEnc, wahaName,
+      messageId, remoteJid, fromMe,
+    );
+
+    if (!result?.base64) throw new NotFoundException('Media not found');
+
+    const buffer = Buffer.from(result.base64, 'base64');
+    const contentType = result.mimetype ?? 'application/octet-stream';
+    const filename = result.fileName;
+
+    return new StreamableFile(buffer, {
+      type: contentType,
+      ...(filename ? { disposition: `attachment; filename="${filename}"` } : {}),
     });
-
-    if (!wahaRes.ok || !wahaRes.body) {
-      throw new NotFoundException('Media not found');
-    }
-
-    const contentType = wahaRes.headers.get('content-type') || 'application/octet-stream';
-
-    // Convert web ReadableStream to Node Buffer
-    const chunks: Uint8Array[] = [];
-    const reader = wahaRes.body.getReader();
-    let done = false;
-    while (!done) {
-      const result = await reader.read();
-      done = result.done;
-      if (result.value) chunks.push(result.value);
-    }
-    const buffer = Buffer.concat(chunks);
-
-    return new StreamableFile(buffer, { type: contentType });
   }
 
   @Post(':id/mark-read')

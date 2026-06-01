@@ -102,18 +102,52 @@ export class EventsController {
       return { received: true };
     }
 
-    // 2. Rewrite internal WAHA media URLs to the externally-resolvable proxy URL.
-    // Applies to both WebSocket broadcasts AND outbound webhook deliveries so
-    // customers can fetch media without exposing internal WAHA worker hostnames.
+    // 2. Normalize Evolution API media payloads.
+    // Evolution API embeds media info inside message.{documentMessage|imageMessage|...}
+    // We extract it into a top-level `media` object with a proxied download URL so
+    // consumers never need access to internal worker hostnames or WhatsApp CDN tokens.
     const rewrittenPayload = { ...(event.payload as any) };
-    if (rewrittenPayload.media?.url) {
+    const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
+
+    const MEDIA_MESSAGE_TYPES = [
+      'documentMessage',
+      'imageMessage',
+      'videoMessage',
+      'audioMessage',
+      'stickerMessage',
+    ] as const;
+
+    const detectedMediaType = MEDIA_MESSAGE_TYPES.find(
+      (t) => rewrittenPayload?.messageType === t || rewrittenPayload?.message?.[t],
+    );
+
+    if (detectedMediaType) {
+      const mediaMsg = rewrittenPayload.message?.[detectedMediaType] ?? {};
+      const messageId: string | undefined = rewrittenPayload?.key?.id;
+      const remoteJid: string | undefined = rewrittenPayload?.key?.remoteJid;
+      const fromMe: boolean = rewrittenPayload?.key?.fromMe ?? false;
+
+      if (messageId && remoteJid) {
+        const proxyUrl =
+          `${apiUrl}/api/connections/${session.id}/media/${encodeURIComponent(messageId)}` +
+          `?remoteJid=${encodeURIComponent(remoteJid)}&fromMe=${fromMe}`;
+
+        rewrittenPayload.media = {
+          url: proxyUrl,
+          mimetype: mediaMsg.mimetype ?? 'application/octet-stream',
+          filename: mediaMsg.fileName ?? mediaMsg.title ?? detectedMediaType.replace('Message', ''),
+          mediaType: detectedMediaType.replace('Message', ''),
+        };
+      }
+    } else if (rewrittenPayload.media?.url) {
+      // Legacy WAHA path — keep working if ever reverted
       const filename = rewrittenPayload.media.url.split('/').pop();
-      const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
       rewrittenPayload.media = {
         ...rewrittenPayload.media,
         url: `${apiUrl}/api/connections/${session.id}/media/${filename}`,
       };
     }
+
     const rewrittenEvent = { ...event, payload: rewrittenPayload };
 
     this.eventsGateway.broadcastEvent(session.id, session.userId, {

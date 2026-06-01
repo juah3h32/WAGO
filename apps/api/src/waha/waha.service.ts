@@ -8,88 +8,52 @@ import {
   WahaSendTextResponse,
 } from './waha.types';
 
+// ─── Evolution API Status → WAHA-compatible status ───────────────────────────
+type WahaStatus = 'STOPPED' | 'STARTING' | 'SCAN_QR_CODE' | 'WORKING' | 'FAILED' | 'CONNECTING' | 'PAIRING';
+
+function mapStatus(state: string | undefined): WahaStatus {
+  switch ((state ?? '').toLowerCase()) {
+    case 'open':
+    case 'connected': return 'WORKING';
+    case 'qrcode':
+    case 'qr': return 'SCAN_QR_CODE';
+    case 'connecting': return 'CONNECTING';
+    case 'pairing': return 'PAIRING';
+    case 'close':
+    case 'disconnected':
+    case 'closed': return 'STOPPED';
+    default: return 'FAILED';
+  }
+}
+
 @Injectable()
 export class WahaService {
   private readonly logger = new Logger(WahaService.name);
   private readonly maxSessions: number;
-
   private readonly wahaPort: number;
 
   constructor(private readonly configService: ConfigService) {
-    this.maxSessions = Number(
-      this.configService.get('WAHA_MAX_SESSIONS', '1'),
-    );
-    this.wahaPort = Number(this.configService.get('WAHA_PORT', '3000'));
+    this.maxSessions = Number(this.configService.get('WAHA_MAX_SESSIONS', '1'));
+    this.wahaPort = Number(this.configService.get('WAHA_PORT', '8080'));
   }
 
-  /**
-   * Resolve the WAHA session name. WAHA Core only supports 'default'.
-   * WAHA Plus supports custom session names.
-   */
   resolveSessionName(dbSessionName: string): string {
     return this.maxSessions === 1 ? 'default' : dbSessionName;
-  }
-
-  /**
-   * Fully reset a WAHA session: stop → logout → delete → recreate with config.
-   * This ensures webhook URL and NOWEB store config are always preserved.
-   */
-  async resetSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    webhookUrl: string,
-    force = false,
-  ): Promise<void> {
-    this.logger.log(
-      `Resetting session "${sessionName}" on worker ${workerUrl}${force ? ' (forced)' : ''}`,
-    );
-    // Skip destructive reset only when NOT forced and session is already active.
-    // Passing force=true bypasses this check — use when session appears WORKING
-    // but is actually stuck and not sending messages.
-    if (!force) {
-      try {
-        const existing = await this.getSession(workerUrl, apiKey, sessionName);
-        const safeStatuses = ['SCAN_QR_CODE', 'WORKING', 'CONNECTING', 'OPENING'];
-        if (existing?.status && safeStatuses.includes(existing.status)) {
-          this.logger.log(`Session "${sessionName}" already in ${existing.status}, skipping reset`);
-          return;
-        }
-      } catch {
-        // No session exists yet — proceed with full reset below
-      }
-    }
-    try {
-      await this.stopSession(workerUrl, apiKey, sessionName);
-    } catch { /* may already be stopped */ }
-    try {
-      await this.logoutSession(workerUrl, apiKey, sessionName);
-    } catch { /* clears auth state */ }
-    try {
-      await this.deleteSession(workerUrl, apiKey, sessionName);
-    } catch { /* may not exist */ }
-    // start:true in createSession starts it automatically
-    await this.createSession(workerUrl, apiKey, sessionName, webhookUrl);
   }
 
   getMaxSessions(): number {
     return this.maxSessions;
   }
 
+  // ─── HTTP helpers ──────────────────────────────────────────────────────────
+
   private buildUrl(workerUrl: string, path: string): string {
-    // If workerUrl already has a protocol, don't prepend 'http://' and don't append port if it's already there
-    if (workerUrl.startsWith('http://') || workerUrl.startsWith('https://')) {
-      const baseUrl = workerUrl.endsWith('/') ? workerUrl.slice(0, -1) : workerUrl;
-      return `${baseUrl}${path}`;
-    }
-    return `http://${workerUrl}:${this.wahaPort}${path}`;
+    const base = workerUrl.includes(':') ? workerUrl : `http://${workerUrl}:${this.wahaPort}`;
+    return `${base}${path}`;
   }
 
   private buildHeaders(apiKey: string): Record<string, string> {
-    return {
-      'X-Api-Key': apiKey,
-      'Content-Type': 'application/json',
-    };
+    return { 'Content-Type': 'application/json', 'apikey': apiKey };
   }
 
   private async request<T>(
@@ -100,692 +64,469 @@ export class WahaService {
   ): Promise<T> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
-
     try {
-      const options: RequestInit = {
-        method,
-        headers,
-        signal: controller.signal,
-      };
-
-      if (body !== undefined) {
-        options.body = JSON.stringify(body);
-      }
+      const options: RequestInit = { method, headers, signal: controller.signal };
+      if (body !== undefined) options.body = JSON.stringify(body);
 
       const response = await fetch(url, options);
-      this.logger.log(`WAHA API: ${method} ${url} - Status: ${response.status}`);
+      this.logger.log(`Evolution API: ${method} ${url} - Status: ${response.status}`);
 
       if (!response.ok) {
         const responseBody = await response.text();
-        this.logger.error(`WAHA API error: ${method} ${url} returned ${response.status} - ${responseBody}`);
-        // Parse WAHA error body to forward its message and status to the caller
+        this.logger.error(`Evolution API error: ${method} ${url} returned ${response.status} - ${responseBody}`);
         let wahaMessage = `WAHA API error ${response.status}`;
         try {
           const parsed = JSON.parse(responseBody);
           if (parsed?.message) wahaMessage = Array.isArray(parsed.message) ? parsed.message[0] : parsed.message;
-        } catch { /* not JSON, keep generic message */ }
+        } catch { /* not JSON */ }
         throw new HttpException(wahaMessage, response.status);
       }
 
       const text = await response.text();
-      if (!text) {
-        return undefined as T;
-      }
-
+      if (!text) return undefined as T;
       return JSON.parse(text) as T;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        const message = `WAHA API timeout: ${method} ${url} exceeded 30s`;
-        this.logger.error(message);
-        throw new Error(message);
+        const msg = `WAHA API timeout: ${method} ${url} exceeded 30s`;
+        this.logger.error(msg);
+        throw new Error(msg);
       }
-
-      // Re-throw HttpExceptions (from WAHA error responses) unchanged
       if (error instanceof HttpException) throw error;
-
-      this.logger.error(
-        `WAHA API request failed: ${method} ${url} - ${error instanceof Error ? error.message : String(error)}`,
-      );
+      this.logger.error(`WAHA API request failed: ${method} ${url} - ${error instanceof Error ? error.message : String(error)}`);
       throw error;
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  async createSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    webhookUrl?: string,
-  ): Promise<WahaSessionResponse> {
-    const url = this.buildUrl(workerUrl, '/api/sessions');
-    const headers = this.buildHeaders(apiKey);
+  // ─── Session lifecycle ─────────────────────────────────────────────────────
 
+  async resetSession(
+    workerUrl: string, apiKey: string, sessionName: string, webhookUrl: string, force = false,
+  ): Promise<void> {
+    this.logger.log(`Resetting session "${sessionName}" on worker ${workerUrl}${force ? ' (forced)' : ''}`);
+
+    if (!force) {
+      try {
+        const existing = await this.getSession(workerUrl, apiKey, sessionName);
+        const safeStatuses = ['SCAN_QR_CODE', 'WORKING', 'CONNECTING', 'PAIRING'];
+        if (existing?.status && safeStatuses.includes(existing.status)) {
+          this.logger.log(`Session "${sessionName}" already in ${existing.status}, skipping reset`);
+          return;
+        }
+      } catch { /* no session yet */ }
+    }
+
+    try { await this.logoutSession(workerUrl, apiKey, sessionName); } catch { /* ignore */ }
+    try { await this.deleteSession(workerUrl, apiKey, sessionName); } catch { /* ignore */ }
+    await this.createSession(workerUrl, apiKey, sessionName, webhookUrl);
+  }
+
+  async createSession(
+    workerUrl: string, apiKey: string, sessionName: string, webhookUrl?: string,
+  ): Promise<WahaSessionResponse> {
+    const url = this.buildUrl(workerUrl, '/instance/create');
+    const headers = this.buildHeaders(apiKey);
     this.logger.log(`Creating session "${sessionName}" on worker ${workerUrl}`);
 
-    return this.request<WahaSessionResponse>('POST', url, headers, {
+    const body: any = {
+      instanceName: sessionName,
+      integration: 'WHATSAPP-BAILEYS',
+      qrcode: true,   // triggers QR generation on create
+    };
+
+    if (webhookUrl) {
+      body.webhook = { enabled: true, url: webhookUrl, events: ['*'] };
+    }
+
+    const result = await this.request<any>('POST', url, headers, body);
+    // QR will be in result.qrcode.base64 when ready; health/QR poll picks it up
+    return this._mapInstance(result?.instance ?? result);
+  }
+
+  async startSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    // For Evolution API, "starting" an existing instance means calling connect
+    const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<any>('GET', this.buildUrl(workerUrl, `/instance/connect/${sessionName}`), headers);
+    } catch { /* QR will come on next poll */ }
+  }
+
+  async stopSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<void>('DELETE', this.buildUrl(workerUrl, `/instance/logout/${sessionName}`), headers);
+    } catch { /* ignore */ }
+  }
+
+  async logoutSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    await this.request<void>('DELETE', this.buildUrl(workerUrl, `/instance/logout/${sessionName}`), headers);
+  }
+
+  async deleteSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    await this.request<void>('DELETE', this.buildUrl(workerUrl, `/instance/delete/${sessionName}`), headers);
+  }
+
+  async restartSession(workerUrl: string, apiKey: string, sessionName: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    await this.request<void>('PUT', this.buildUrl(workerUrl, `/instance/restart/${sessionName}`), headers);
+  }
+
+  async getSession(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaSessionResponse> {
+    const headers = this.buildHeaders(apiKey);
+    const url = this.buildUrl(workerUrl, `/instance/connectionState/${sessionName}`);
+    const result = await this.request<any>('GET', url, headers);
+    return {
       name: sessionName,
-      start: true,
-      config: {
-        // NOWEB requires store to be enabled for chat/message history APIs.
-        // WAHA ignores noweb config when using WEBJS engine.
-        noweb: {
-          store: {
-            enabled: true,
-            fullSync: true,
-          },
-        },
-        webhooks: webhookUrl
-          ? [{ url: webhookUrl, events: ['*'] }]
-          : [],
-      },
+      status: mapStatus(result?.instance?.state ?? result?.state),
+    };
+  }
+
+  async listSessions(workerUrl: string, apiKey: string): Promise<WahaSessionResponse[]> {
+    const headers = this.buildHeaders(apiKey);
+    const url = this.buildUrl(workerUrl, '/instance/fetchInstances');
+    const result = await this.request<any[]>('GET', url, headers);
+    if (!Array.isArray(result)) return [];
+    return result.map((inst) => this._mapInstance(inst));
+  }
+
+  private _mapInstance(inst: any): WahaSessionResponse {
+    // fetchInstances returns { connectionStatus: "open"|"close"|"connecting", name: "..." }
+    // connectionState returns { instance: { state: "open"|"close"|... } }
+    const state = inst?.instance?.state
+      ?? inst?.connectionStatus
+      ?? inst?.state
+      ?? inst?.status;
+    return {
+      name: inst?.instance?.instanceName ?? inst?.instanceName ?? inst?.name ?? 'default',
+      status: mapStatus(state),
+    };
+  }
+
+  // ─── QR code ───────────────────────────────────────────────────────────────
+
+  async getQrCode(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaQrCodeResponse> {
+    const headers = this.buildHeaders(apiKey);
+    const url = this.buildUrl(workerUrl, `/instance/connect/${sessionName}`);
+
+    // Retry up to 3 times with 1s delay — Baileys 515 restarts cause temporary QR gaps
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await this.request<any>('GET', url, headers);
+        const b64: string | undefined = result?.base64 ?? result?.qrcode?.base64 ?? result?.qr;
+        if (b64 && typeof b64 === 'string') {
+          const parts = b64.split(',');
+          const mimeMatch = parts[0]?.match(/data:([^;]+)/);
+          const mimetype = mimeMatch?.[1] ?? 'image/png';
+          const value = parts[1] ?? b64;
+          return { value, mimetype };
+        }
+      } catch { /* retry */ }
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1_000));
+    }
+    throw new HttpException('QR not ready yet', 503);
+  }
+
+  // ─── Media download ────────────────────────────────────────────────────────
+
+  async downloadMediaByMessageKey(
+    workerUrl: string, apiKey: string, sessionName: string,
+    messageId: string, remoteJid: string, fromMe: boolean,
+  ): Promise<{ base64: string; mimetype: string; fileName?: string; mediaType?: string }> {
+    const url = this.buildUrl(workerUrl, `/chat/getBase64FromMediaMessage/${sessionName}`);
+    const headers = this.buildHeaders(apiKey);
+    return this.request<any>('POST', url, headers, {
+      message: { key: { id: messageId, remoteJid, fromMe } },
     });
   }
 
-  async startSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}/start`,
-    );
+  // ─── Profile & presence ────────────────────────────────────────────────────
+
+  async getMe(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaMeResponse | null> {
     const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(`Starting session "${sessionName}" on worker ${workerUrl}`);
-
-    await this.request<void>('POST', url, headers);
-  }
-
-  async stopSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}/stop`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(`Stopping session "${sessionName}" on worker ${workerUrl}`);
-
-    await this.request<void>('POST', url, headers);
-  }
-
-  async deleteSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(
-      `Deleting session "${sessionName}" on worker ${workerUrl}`,
-    );
-
-    await this.request<void>('DELETE', url, headers);
-  }
-
-  async getSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<WahaSessionResponse> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(
-      `Getting session "${sessionName}" from worker ${workerUrl}`,
-    );
-
-    return this.request<WahaSessionResponse>('GET', url, headers);
-  }
-
-  async listSessions(
-    workerUrl: string,
-    apiKey: string,
-  ): Promise<WahaSessionResponse[]> {
-    const url = this.buildUrl(workerUrl, '/api/sessions?all=true');
-    const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(`Listing sessions on worker ${workerUrl}`);
-
-    return this.request<WahaSessionResponse[]>('GET', url, headers);
-  }
-
-  async getQrCode(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<WahaQrCodeResponse> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/${encodeURIComponent(sessionName)}/auth/qr`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(
-      `Getting QR code for session "${sessionName}" on worker ${workerUrl}`,
-    );
-
-    // QR endpoint returns raw PNG by default, not JSON
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
-
     try {
-      const response = await fetch(url, {
-        method: 'GET',
+      const result = await this.request<any>(
+        'GET',
+        this.buildUrl(workerUrl, `/instance/fetchInstances?instanceName=${sessionName}`),
         headers,
-        signal: controller.signal,
-      });
-      this.logger.log(`WAHA API (QR): GET ${url} - Status: ${response.status}`);
-
-      if (!response.ok) {
-        const body = await response.text();
-        const message = `WAHA API error: GET ${url} returned ${response.status} - ${body}`;
-        this.logger.error(message);
-        throw new Error(message);
-      }
-
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const base64 = buffer.toString('base64');
-
-      return {
-        value: base64,
-        mimetype: response.headers.get('content-type') || 'image/png',
-      };
-    } finally {
-      clearTimeout(timeout);
+      );
+      const inst = Array.isArray(result) ? result[0] : result;
+      const profileName = inst?.profileName ?? inst?.instance?.profileName ?? null;
+      const ownerJid = inst?.ownerJid ?? inst?.instance?.ownerJid ?? null;
+      if (!profileName && !ownerJid) return null;
+      const id = ownerJid ?? `${sessionName}@s.whatsapp.net`;
+      return { id, pushName: profileName ?? sessionName };
+    } catch {
+      return null;
     }
   }
 
-  async restartSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}/restart`,
-    );
+  async setOnlinePresence(workerUrl: string, apiKey: string, sessionName: string, chatId?: string): Promise<void> {
+    if (!chatId) return; // Evolution API requires a recipient for typing presence
     const headers = this.buildHeaders(apiKey);
-
-    this.logger.log(
-      `Restarting session "${sessionName}" on worker ${workerUrl}`,
-    );
-
-    await this.request<void>('POST', url, headers);
-  }
-
-  async getChats(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<WahaChatResponse[]> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/${encodeURIComponent(sessionName)}/chats?limit=20&sortBy=conversationTimestamp&sortOrder=desc`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    return this.request<WahaChatResponse[]>('GET', url, headers);
-  }
-
-  async getProfilePicture(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    contactId: string,
-  ): Promise<{ profilePictureUrl: string | null }> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/contacts/profile-picture?contactId=${encodeURIComponent(contactId)}&session=${encodeURIComponent(sessionName)}`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
     try {
-      const result = await this.request<{ profilePictureURL: string | null }>('GET', url, headers);
-      return { profilePictureUrl: result.profilePictureURL };
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+        number: chatId.replace('@s.whatsapp.net', '').replace('@c.us', ''),
+        options: { presence: 'composing', delay: 1000 },
+      });
+    } catch { /* non-critical */ }
+  }
+
+  async setOfflinePresence(workerUrl: string, apiKey: string, sessionName: string, chatId?: string): Promise<void> {
+    if (!chatId) return;
+    const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+        number: chatId.replace('@s.whatsapp.net', '').replace('@c.us', ''),
+        options: { presence: 'paused', delay: 500 },
+      });
+    } catch { /* non-critical */ }
+  }
+
+  // ─── Chats & messages ──────────────────────────────────────────────────────
+
+  async getChats(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaChatResponse[]> {
+    const headers = this.buildHeaders(apiKey);
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findChats/${sessionName}`), headers, {});
+    const chats = Array.isArray(result) ? result : (result?.chats ?? []);
+    return chats.slice(0, 20).map((c: any) => ({
+      id: c.id ?? c.remoteJid ?? '',
+      name: c.name ?? c.pushName ?? undefined,
+      timestamp: c.updatedAt ? Math.floor(new Date(c.updatedAt).getTime() / 1000) : (c.conversationTimestamp ?? 0),
+      lastMessage: c.lastMessage ? {
+        body: c.lastMessage.message?.conversation ?? c.lastMessage.message?.extendedTextMessage?.text ?? '',
+        timestamp: c.lastMessage.messageTimestamp ?? 0,
+        fromMe: c.lastMessage.key?.fromMe ?? false,
+      } : undefined,
+    }));
+  }
+
+  async getMessages(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<any[]> {
+    const headers = this.buildHeaders(apiKey);
+    try {
+      const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findMessages/${sessionName}`), headers, {
+        where: { key: { remoteJid: chatId } },
+        limit: 50,
+      });
+      const msgs = Array.isArray(result) ? result : (result?.messages ?? []);
+      return msgs.map((m: any) => ({
+        id: m.key?.id ?? m.id,
+        fromMe: m.key?.fromMe ?? false,
+        body: m.message?.conversation ?? m.message?.extendedTextMessage?.text ?? '',
+        timestamp: m.messageTimestamp ?? 0,
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  async getProfilePicture(workerUrl: string, apiKey: string, sessionName: string, contactId: string): Promise<{ profilePictureUrl: string | null }> {
+    const headers = this.buildHeaders(apiKey);
+    try {
+      const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findContacts/${sessionName}`), headers, {
+        where: { id: contactId },
+      });
+      const contact = Array.isArray(result) ? result[0] : result;
+      return { profilePictureUrl: contact?.profilePictureUrl ?? null };
     } catch {
       return { profilePictureUrl: null };
     }
   }
 
-  private buildFilePayload(opts: { mediaUrl?: string; mediaData?: string; mimetype?: string; filename?: string }): any {
-    if (opts.mediaData) {
-      const file: any = { data: opts.mediaData };
-      if (opts.mimetype) file.mimetype = opts.mimetype;
-      if (opts.filename) file.filename = opts.filename;
-      return file;
-    }
-    const file: any = { url: opts.mediaUrl };
-    if (opts.filename) file.filename = opts.filename;
-    return file;
+  // ─── Messaging ─────────────────────────────────────────────────────────────
+
+  private toNumber(chatId: string): string {
+    return chatId.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@g.us', '');
+  }
+
+  async sendText(
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, text: string,
+    options?: { skipPresence?: boolean; replyTo?: string; extraDelayMs?: number },
+  ): Promise<WahaSendTextResponse> {
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, text.length, options?.extraDelayMs ?? 0);
+    const headers = this.buildHeaders(apiKey);
+    const body: any = { number: this.toNumber(chatId), text };
+    if (options?.replyTo) body.options = { quoted: { key: { id: options.replyTo } } };
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendText/${sessionName}`), headers, body);
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
+    return { id: result?.key?.id ?? '', timestamp: result?.messageTimestamp ?? 0 };
   }
 
   async sendImage(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    mediaUrl?: string,
-    caption?: string,
-    mediaData?: string,
-    mimetype?: string,
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, mediaUrl?: string, caption?: string,
+    mediaData?: string, mimetype?: string,
     options?: { skipPresence?: boolean; extraDelayMs?: number },
   ): Promise<any> {
-    if (!options?.skipPresence) {
-      // Media sends use a shorter content length (caption length or 20)
-      const len = caption?.length ?? 20;
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, len, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendImage');
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, caption?.length ?? 20, options?.extraDelayMs ?? 0);
     const headers = this.buildHeaders(apiKey);
-    const body: any = { chatId, session: sessionName, file: this.buildFilePayload({ mediaUrl, mediaData, mimetype }) };
-    if (caption) body.caption = caption;
-
-    const result = await this.request<any>('POST', url, headers, body);
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
+    const media = mediaData ? `data:${mimetype ?? 'image/jpeg'};base64,${mediaData}` : mediaUrl;
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendMedia/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      mediatype: 'image',
+      media,
+      caption,
+    });
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
     return result;
   }
 
   async sendFile(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    mediaUrl?: string,
-    filename?: string,
-    caption?: string,
-    mediaData?: string,
-    mimetype?: string,
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, mediaUrl?: string, filename?: string,
+    caption?: string, mediaData?: string, mimetype?: string,
     options?: { skipPresence?: boolean; extraDelayMs?: number },
   ): Promise<any> {
-    if (!options?.skipPresence) {
-      const len = caption?.length ?? 20;
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, len, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendFile');
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, caption?.length ?? 20, options?.extraDelayMs ?? 0);
     const headers = this.buildHeaders(apiKey);
-    const body: any = { chatId, session: sessionName, file: this.buildFilePayload({ mediaUrl, mediaData, mimetype, filename }) };
-    if (caption) body.caption = caption;
-
-    const result = await this.request<any>('POST', url, headers, body);
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
-    return result;
-  }
-
-  async sendVoice(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    mediaUrl?: string,
-    mediaData?: string,
-    mimetype?: string,
-    options?: { skipPresence?: boolean; extraDelayMs?: number },
-  ): Promise<any> {
-    if (!options?.skipPresence) {
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 20, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendVoice');
-    const headers = this.buildHeaders(apiKey);
-
-    const result = await this.request<any>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-      file: this.buildFilePayload({ mediaUrl, mediaData, mimetype }),
+    const media = mediaData ? `data:${mimetype ?? 'application/octet-stream'};base64,${mediaData}` : mediaUrl;
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendMedia/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      mediatype: 'document',
+      media,
+      caption,
+      fileName: filename,
     });
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
     return result;
   }
 
   async sendVideo(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    mediaUrl?: string,
-    caption?: string,
-    mediaData?: string,
-    mimetype?: string,
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, mediaUrl?: string, caption?: string,
+    mediaData?: string, mimetype?: string,
     options?: { skipPresence?: boolean; extraDelayMs?: number },
   ): Promise<any> {
-    if (!options?.skipPresence) {
-      const len = caption?.length ?? 20;
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, len, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendVideo');
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, caption?.length ?? 20, options?.extraDelayMs ?? 0);
     const headers = this.buildHeaders(apiKey);
-    const body: any = { chatId, session: sessionName, file: this.buildFilePayload({ mediaUrl, mediaData, mimetype }) };
-    if (caption) body.caption = caption;
+    const media = mediaData ? `data:${mimetype ?? 'video/mp4'};base64,${mediaData}` : mediaUrl;
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendMedia/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      mediatype: 'video',
+      media,
+      caption,
+    });
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
+    return result;
+  }
 
-    const result = await this.request<any>('POST', url, headers, body);
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
+  async sendVoice(
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, mediaUrl?: string, mediaData?: string, mimetype?: string,
+    options?: { skipPresence?: boolean; extraDelayMs?: number },
+  ): Promise<any> {
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 20, options?.extraDelayMs ?? 0);
+    const headers = this.buildHeaders(apiKey);
+    const media = mediaData ? `data:${mimetype ?? 'audio/ogg'};base64,${mediaData}` : mediaUrl;
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendWhatsAppAudio/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      audio: media,
+      encoding: true,
+    });
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
     return result;
   }
 
   async sendLocation(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    latitude: number,
-    longitude: number,
-    name?: string,
-    address?: string,
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, lat: number, lng: number, name?: string, address?: string,
     options?: { skipPresence?: boolean; extraDelayMs?: number },
   ): Promise<any> {
-    if (!options?.skipPresence) {
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 20, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendLocation');
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 10, options?.extraDelayMs ?? 0);
     const headers = this.buildHeaders(apiKey);
-
-    const result = await this.request<any>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-      latitude,
-      longitude,
-      title: name,
-      address,
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendLocation/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      name: name ?? '',
+      address: address ?? '',
+      latitude: lat,
+      longitude: lng,
     });
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
     return result;
   }
 
   async sendContactVcard(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    contactName: string,
-    contactPhone: string,
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, contactId: string, contactName: string,
     options?: { skipPresence?: boolean; extraDelayMs?: number },
   ): Promise<any> {
-    if (!options?.skipPresence) {
-      await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 20, options?.extraDelayMs ?? 0);
-    }
-    const url = this.buildUrl(workerUrl, '/api/sendContactVcard');
+    if (!options?.skipPresence) await this.simulatePresence(workerUrl, apiKey, sessionName, chatId, 15, options?.extraDelayMs ?? 0);
     const headers = this.buildHeaders(apiKey);
-    const vcard = [
-      'BEGIN:VCARD',
-      'VERSION:3.0',
-      `FN:${contactName}`,
-      `TEL;type=CELL;type=VOICE;waid=${contactPhone.replace(/\D/g, '')}:+${contactPhone.replace(/\D/g, '')}`,
-      'END:VCARD',
-    ].join('\n');
-
-    const result = await this.request<any>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-      contacts: [{ vcard }],
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendContact/${sessionName}`), headers, {
+      number: this.toNumber(chatId),
+      contact: [{ fullName: contactName, wuid: this.toNumber(contactId), phoneNumber: this.toNumber(contactId) }],
     });
-    if (!options?.skipPresence) {
-      const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
-    }
-    return result;
-  }
-
-  async getMessages(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    limit: number = 50,
-  ): Promise<any[]> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/${encodeURIComponent(sessionName)}/chats/${encodeURIComponent(chatId)}/messages?limit=${limit}&downloadMedia=false`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    return this.request<any[]>('GET', url, headers);
-  }
-
-  async getMe(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<WahaMeResponse> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}/me`,
-    );
-    const headers = this.buildHeaders(apiKey);
-
-    return this.request<WahaMeResponse>('GET', url, headers);
-  }
-
-  async sendSeen(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, '/api/sendSeen');
-    const headers = this.buildHeaders(apiKey);
-
-    await this.request<void>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-    });
-  }
-
-  async startTyping(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, '/api/startTyping');
-    const headers = this.buildHeaders(apiKey);
-
-    await this.request<void>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-    });
-  }
-
-  async stopTyping(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, '/api/stopTyping');
-    const headers = this.buildHeaders(apiKey);
-
-    await this.request<void>('POST', url, headers, {
-      chatId,
-      session: sessionName,
-    });
-  }
-
-  /**
-   * Full human-like presence sequence before sending:
-   *   1. Set online presence (so the contact sees "online" in WA)
-   *   2. Mark chat as seen (removes unread badge — humans read before replying)
-   *   3. Pause briefly to simulate reading time (0.5–2 s)
-   *   4. Start typing indicator
-   *   5. Wait a random delay based on content length (30–60 ms/char, capped 6 s)
-   *      plus an occasional "thinking" pause
-   *   6. Stop typing
-   *   7. Set offline/unavailable presence (go "offline" after the message is sent)
-   *
-   * WHY each step matters:
-   * - Step 1: Without an online signal, WA logs show the account sending messages
-   *   while "last seen" never updates — a known bot pattern.
-   * - Step 2: Marking seen before replying matches human behavior. Bots that never
-   *   read messages (double-tick never turns blue) are flagged.
-   * - Step 4–6: The typing indicator occupies real time in the recipient's UI.
-   *   Its duration should match the actual message length. A fixed 1 s typing delay
-   *   for all message sizes is trivially detected.
-   * - Step 7: Staying "online" continuously (never going offline) is a bot signal.
-   *
-   * @param extraDelayMs - Additional ms to wait (from AntiSpamService.humanDelay)
-   */
-  async simulatePresence(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    contentLength = 20,
-    extraDelayMs = 0,
-  ): Promise<void> {
-    // Step 1: Set online presence (pass chatId — required in WAHA 2026.5.1+)
-    try { await this.setOnlinePresence(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
-
-    // Step 2: Mark chat as seen
-    try { await this.sendSeen(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
-
-    // Step 3: Brief read pause (500–2000 ms)
-    const readPause = 500 + Math.random() * 1_500;
-    await new Promise((resolve) => setTimeout(resolve, readPause));
-
-    // Step 4: Start typing
-    try { await this.startTyping(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
-
-    // Step 5: Typing duration — 30–60 ms/char, capped at 6 s, plus extra delay from AntiSpamService
-    const typingRate = 30 + Math.random() * 30;
-    const typingDelay = Math.min(contentLength * typingRate, 6_000);
-    const totalWait = typingDelay + extraDelayMs;
-    await new Promise((resolve) => setTimeout(resolve, totalWait));
-
-    // Step 6: Stop typing
-    try { await this.stopTyping(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
-
-    // Step 7: Brief gap between stop-typing and actual send (makes it feel natural)
-    await new Promise((resolve) => setTimeout(resolve, 200 + Math.random() * 300));
-  }
-
-  /**
-   * Set presence to ONLINE for a session.
-   * WAHA NOWEB engine supports POST /api/{session}/presence with { presence: "available" }
-   */
-  async setOnlinePresence(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId?: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, `/api/${encodeURIComponent(sessionName)}/presence`);
-    const headers = this.buildHeaders(apiKey);
-    const body: any = { presence: 'available' };
-    if (chatId) body.chatId = chatId; // required in WAHA 2026.5.1+
-    await this.request<void>('POST', url, headers, body);
-  }
-
-  async setOfflinePresence(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId?: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, `/api/${encodeURIComponent(sessionName)}/presence`);
-    const headers = this.buildHeaders(apiKey);
-    const body: any = { presence: 'unavailable' };
-    if (chatId) body.chatId = chatId;
-    await this.request<void>('POST', url, headers, body);
-  }
-
-  async sendText(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    text: string,
-    options?: { skipPresence?: boolean; replyTo?: string; extraDelayMs?: number },
-  ): Promise<WahaSendTextResponse> {
-    this.logger.log(
-      `Sending text to ${chatId} via session "${sessionName}" on worker ${workerUrl}`,
-    );
-
-    if (!options?.skipPresence) {
-      await this.simulatePresence(
-        workerUrl, apiKey, sessionName, chatId,
-        text.length, options?.extraDelayMs ?? 0,
-      );
-    }
-
-    const url = this.buildUrl(workerUrl, '/api/sendText');
-    const headers = this.buildHeaders(apiKey);
-    const body: any = { chatId, text, session: sessionName };
-    if (options?.replyTo) body.reply_to = options.replyTo;
-
-    const result = await this.request<WahaSendTextResponse>('POST', url, headers, body);
-
-    // Go offline after sending — staying "always online" is a bot signal
-    if (!options?.skipPresence) {
-      const offlineDelay = 1_500 + Math.random() * 3_000; // 1.5–4.5 s after send
-      setTimeout(() => {
-        this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {
-          // Non-critical, fire-and-forget
-        });
-      }, offlineDelay);
-    }
-
+    if (!options?.skipPresence) setTimeout(() => this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}), 2_000 + Math.random() * 2_000);
     return result;
   }
 
   async sendReaction(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-    chatId: string,
-    messageId: string,
-    reaction: string,
-  ): Promise<void> {
-    const url = this.buildUrl(workerUrl, '/api/reaction');
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, messageId: string, reaction: string,
+  ): Promise<any> {
     const headers = this.buildHeaders(apiKey);
-
-    await this.request<void>('PUT', url, headers, {
-      messageId,
+    return this.request<any>('POST', this.buildUrl(workerUrl, `/message/sendReaction/${sessionName}`), headers, {
+      key: { remoteJid: chatId, id: messageId },
       reaction,
-      session: sessionName,
     });
   }
 
-  async logoutSession(
-    workerUrl: string,
-    apiKey: string,
-    sessionName: string,
-  ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/sessions/${encodeURIComponent(sessionName)}/logout`,
-    );
+  // ─── Typing & seen ─────────────────────────────────────────────────────────
+
+  async sendSeen(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<void> {
     const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/markMessageAsRead/${sessionName}`), headers, {
+        readMessages: [{ remoteJid: chatId, fromMe: false, id: 'last' }],
+      });
+    } catch { /* non-critical */ }
+  }
 
-    this.logger.log(
-      `Logging out session "${sessionName}" on worker ${workerUrl}`,
-    );
+  async startTyping(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+        number: this.toNumber(chatId),
+        options: { presence: 'composing', delay: 4000 },
+      });
+    } catch { /* non-critical */ }
+  }
 
-    await this.request<void>('POST', url, headers);
+  async stopTyping(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<void> {
+    const headers = this.buildHeaders(apiKey);
+    try {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+        number: this.toNumber(chatId),
+        options: { presence: 'paused', delay: 500 },
+      });
+    } catch { /* non-critical */ }
+  }
+
+  // ─── Human-like presence simulation ───────────────────────────────────────
+
+  humanDelay(messageLength: number): number {
+    const base = 800 + Math.random() * 1_400;
+    const typingRate = 30 + Math.random() * 30;
+    const typing = Math.min(messageLength * typingRate, 4_000);
+    const thinkingPause = Math.random() < 0.2 ? 1_000 + Math.random() * 2_000 : 0;
+    return Math.round(base + typing + thinkingPause);
+  }
+
+  async simulatePresence(
+    workerUrl: string, apiKey: string, sessionName: string,
+    chatId: string, contentLength = 20, extraDelayMs = 0,
+  ): Promise<void> {
+    try { await this.setOnlinePresence(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
+    try { await this.sendSeen(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
+    await new Promise((r) => setTimeout(r, 500 + Math.random() * 1_500));
+    try { await this.startTyping(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
+    const typingRate = 30 + Math.random() * 30;
+    const typingDelay = Math.min(contentLength * typingRate, 6_000);
+    await new Promise((r) => setTimeout(r, typingDelay + extraDelayMs));
+    try { await this.stopTyping(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
+    await new Promise((r) => setTimeout(r, 200 + Math.random() * 300));
   }
 }
