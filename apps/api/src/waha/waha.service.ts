@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, HttpException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   WahaSessionResponse,
@@ -118,9 +118,14 @@ export class WahaService {
 
       if (!response.ok) {
         const responseBody = await response.text();
-        const message = `WAHA API error: ${method} ${url} returned ${response.status} - ${responseBody}`;
-        this.logger.error(message);
-        throw new Error(message);
+        this.logger.error(`WAHA API error: ${method} ${url} returned ${response.status} - ${responseBody}`);
+        // Parse WAHA error body to forward its message and status to the caller
+        let wahaMessage = `WAHA error ${response.status}`;
+        try {
+          const parsed = JSON.parse(responseBody);
+          if (parsed?.message) wahaMessage = Array.isArray(parsed.message) ? parsed.message[0] : parsed.message;
+        } catch { /* not JSON, keep generic message */ }
+        throw new HttpException(wahaMessage, response.status);
       }
 
       const text = await response.text();
@@ -136,9 +141,8 @@ export class WahaService {
         throw new Error(message);
       }
 
-      if (error instanceof Error && error.message.startsWith('WAHA API')) {
-        throw error;
-      }
+      // Re-throw HttpExceptions (from WAHA error responses) unchanged
+      if (error instanceof HttpException) throw error;
 
       this.logger.error(
         `WAHA API request failed: ${method} ${url} - ${error instanceof Error ? error.message : String(error)}`,
