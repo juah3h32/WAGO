@@ -399,7 +399,7 @@ export class WahaService {
     const result = await this.request<any>('POST', url, headers, body);
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -428,7 +428,7 @@ export class WahaService {
     const result = await this.request<any>('POST', url, headers, body);
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -456,7 +456,7 @@ export class WahaService {
     });
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -484,7 +484,7 @@ export class WahaService {
     const result = await this.request<any>('POST', url, headers, body);
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -516,7 +516,7 @@ export class WahaService {
     });
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -550,7 +550,7 @@ export class WahaService {
     });
     if (!options?.skipPresence) {
       const d = 1_500 + Math.random() * 3_000;
-      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName).catch(() => {}); }, d);
+      setTimeout(() => { this.setOfflinePresence(workerUrl, apiKey, sessionName, chatId).catch(() => {}); }, d);
     }
     return result;
   }
@@ -661,8 +661,8 @@ export class WahaService {
     contentLength = 20,
     extraDelayMs = 0,
   ): Promise<void> {
-    // Step 1: Set online presence
-    try { await this.setOnlinePresence(workerUrl, apiKey, sessionName); } catch { /* non-critical */ }
+    // Step 1: Set online presence (pass chatId — required in WAHA 2026.5.1+)
+    try { await this.setOnlinePresence(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
 
     // Step 2: Mark chat as seen
     try { await this.sendSeen(workerUrl, apiKey, sessionName, chatId); } catch { /* non-critical */ }
@@ -695,30 +695,26 @@ export class WahaService {
     workerUrl: string,
     apiKey: string,
     sessionName: string,
+    chatId?: string,
   ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/${encodeURIComponent(sessionName)}/presence`,
-    );
+    const url = this.buildUrl(workerUrl, `/api/${encodeURIComponent(sessionName)}/presence`);
     const headers = this.buildHeaders(apiKey);
-    await this.request<void>('POST', url, headers, { presence: 'available' });
+    const body: any = { presence: 'available' };
+    if (chatId) body.chatId = chatId; // required in WAHA 2026.5.1+
+    await this.request<void>('POST', url, headers, body);
   }
 
-  /**
-   * Set presence to OFFLINE/UNAVAILABLE for a session.
-   * Call this after sending to avoid the number appearing "always online".
-   */
   async setOfflinePresence(
     workerUrl: string,
     apiKey: string,
     sessionName: string,
+    chatId?: string,
   ): Promise<void> {
-    const url = this.buildUrl(
-      workerUrl,
-      `/api/${encodeURIComponent(sessionName)}/presence`,
-    );
+    const url = this.buildUrl(workerUrl, `/api/${encodeURIComponent(sessionName)}/presence`);
     const headers = this.buildHeaders(apiKey);
-    await this.request<void>('POST', url, headers, { presence: 'unavailable' });
+    const body: any = { presence: 'unavailable' };
+    if (chatId) body.chatId = chatId;
+    await this.request<void>('POST', url, headers, body);
   }
 
   async sendText(

@@ -148,32 +148,32 @@ export class HealthService {
     );
 
     try {
-      const apiUrl = this.configService.get<string>(
-        'API_URL',
-        'http://localhost:3001',
-      );
+      const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
       const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret ?? ''}`;
 
-      await this.wahaService.createSession(
-        worker.internalIp,
-        worker.apiKeyEnc,
-        wahaName,
-        webhookUrl,
-      );
-      await this.wahaService.startSession(
-        worker.internalIp,
-        worker.apiKeyEnc,
-        wahaName,
-      );
+      // WAHA 2026.5.1+ only lists non-stopped sessions in GET /api/sessions.
+      // Before creating, check if the session already exists (STOPPED) — if so just start it.
+      let sessionExists = false;
+      try {
+        const existing = await this.wahaService.getSession(worker.internalIp, worker.apiKeyEnc, wahaName);
+        if (existing?.status) {
+          sessionExists = true;
+          this.logger.log(`Session "${wahaName}" exists in WAHA with status ${existing.status} — starting instead of re-creating`);
+        }
+      } catch { /* session doesn't exist — proceed with create */ }
+
+      if (!sessionExists) {
+        await this.wahaService.createSession(worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl);
+      }
+
+      await this.wahaService.startSession(worker.internalIp, worker.apiKeyEnc, wahaName);
 
       await this.db
         .update(wahaSessions)
         .set({ status: 'scan_qr', updatedAt: new Date() })
         .where(eq(wahaSessions.id, dbSession.id));
 
-      this.logger.log(
-        `Auto-created session "${dbSession.sessionName}" on worker ${worker.id}`,
-      );
+      this.logger.log(`Auto-created/started session "${dbSession.sessionName}" on worker ${worker.id}`);
     } catch (error) {
       this.logger.warn(
         `Auto-create failed for "${dbSession.sessionName}": ${error instanceof Error ? error.message : String(error)} — will retry next poll`,
