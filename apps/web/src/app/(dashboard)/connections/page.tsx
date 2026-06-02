@@ -823,34 +823,70 @@ function AiResponderTab({ connectionId }: { connectionId: string }) {
         </button>
       </div>
 
-      {/* Provider */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Proveedor</label>
-        <select
-          value={config.provider}
-          onChange={(e) => {
-            const p = e.target.value;
-            setConfig((c) => ({
-              ...c,
-              provider: p,
-              model: p === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001",
-            }));
-          }}
-          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all">
-          <option value="anthropic">Anthropic (Claude)</option>
-          <option value="openai">OpenAI</option>
-        </select>
+      {/* Provider + Model */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Proveedor</label>
+          <select
+            value={config.provider}
+            onChange={(e) => {
+              const p = e.target.value;
+              const defaultModel = p === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001";
+              setConfig((c) => ({ ...c, provider: p, model: defaultModel }));
+            }}
+            className="block w-full rounded-xl border border-border-secondary bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all">
+            <option value="anthropic">Anthropic (Claude)</option>
+            <option value="openai">OpenAI</option>
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Modelo</label>
+          <select
+            value={config.model}
+            onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
+            className="block w-full rounded-xl border border-border-secondary bg-bg-input px-3 py-2.5 text-sm text-text-primary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all">
+            {config.provider === "anthropic" ? (
+              <>
+                <option value="claude-haiku-4-5-20251001">Haiku 4.5 ⭐ Recomendado</option>
+                <option value="claude-sonnet-4-5-20251022">Sonnet 4.5 — Más inteligente</option>
+                <option value="claude-opus-4-5">Opus 4.5 — Máxima calidad</option>
+                <option value="claude-haiku-3-5-20241022">Haiku 3.5 — Más barato</option>
+              </>
+            ) : (
+              <>
+                <option value="gpt-4o-mini">GPT-4o Mini ⭐ Recomendado</option>
+                <option value="gpt-4o">GPT-4o — Más inteligente</option>
+                <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                <option value="gpt-3.5-turbo">GPT-3.5 Turbo — Más barato</option>
+              </>
+            )}
+          </select>
+        </div>
       </div>
 
-      {/* Model */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Modelo</label>
-        <input
-          type="text"
-          value={config.model}
-          onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
-          placeholder={config.provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001"}
-          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all" />
+      {/* Model info badge */}
+      <div className="flex items-center gap-2 rounded-xl border border-border-primary bg-bg-elevated px-3 py-2 text-xs text-text-tertiary">
+        <svg className="h-3.5 w-3.5 shrink-0 text-wa-green" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        {config.provider === "anthropic" ? (
+          config.model === "claude-haiku-4-5-20251001"
+            ? "Haiku 4.5: ultra rápido, ~$0.0008/1k tokens. Ideal para respuestas cortas de WhatsApp."
+            : config.model === "claude-sonnet-4-5-20251022"
+            ? "Sonnet 4.5: equilibrio calidad/costo. ~$0.003/1k tokens."
+            : config.model === "claude-opus-4-5"
+            ? "Opus 4.5: máxima inteligencia. ~$0.015/1k tokens."
+            : "Haiku 3.5: el más económico. ~$0.0008/1k tokens."
+        ) : (
+          config.model === "gpt-4o-mini"
+            ? "GPT-4o Mini: rápido y económico, ~$0.00015/1k tokens. Ideal para WhatsApp."
+            : config.model === "gpt-4o"
+            ? "GPT-4o: alta inteligencia, ~$0.005/1k tokens."
+            : config.model === "gpt-4-turbo"
+            ? "GPT-4 Turbo: muy capaz, ~$0.01/1k tokens."
+            : "GPT-3.5: el más barato, ~$0.0005/1k tokens."
+        )}
       </div>
 
       {/* API Key */}
