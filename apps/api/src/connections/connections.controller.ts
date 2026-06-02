@@ -384,14 +384,11 @@ export class ConnectionsController {
     }
     this.enforceConnectionScope(user, id);
 
-    const worker = await this.workersService.getWorkerForSession(id);
+    let worker = await this.workersService.getWorkerForSession(id);
 
+    // If no worker OR assigned worker is unreachable, re-provision from scratch
     if (!worker) {
-      // No worker assigned — re-trigger full setup instead of failing
-      await this.db
-        .update(wahaSessions)
-        .set({ status: 'pending', updatedAt: new Date() })
-        .where(eq(wahaSessions.id, id));
+      await this.db.update(wahaSessions).set({ status: 'pending', updatedAt: new Date() }).where(eq(wahaSessions.id, id));
       this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
         this.logger.error(`Restart setup failed for ${connection.id}: ${err instanceof Error ? err.message : String(err)}`);
       });
@@ -399,18 +396,24 @@ export class ConnectionsController {
       return this.mapConnection(pending);
     }
 
-    const wahaName = this.wahaService.resolveSessionName(
-      connection.sessionName,
-    );
+    // Quick liveness check — if worker is unreachable, re-provision
+    try {
+      await this.wahaService.listSessions(worker.internalIp, worker.apiKeyEnc);
+    } catch {
+      this.logger.warn(`Worker ${worker.id} at ${worker.internalIp} unreachable — re-provisioning`);
+      await this.workersService.unassignSession(worker.id, id).catch(() => {});
+      await this.db.update(wahaSessions).set({ status: 'pending', workerId: null, updatedAt: new Date() }).where(eq(wahaSessions.id, id));
+      this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+        this.logger.error(`Re-provision failed for ${connection.id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      const [pending] = await this.db.select().from(wahaSessions).where(eq(wahaSessions.id, id));
+      return this.mapConnection(pending);
+    }
 
-    const apiUrl = this.configService.get<string>(
-      'API_URL',
-      'http://localhost:3001',
-    );
+    const wahaName = this.wahaService.resolveSessionName(connection.sessionName);
+    const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
     const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
 
-    // Always do a full reset to ensure webhook URL and store config are preserved.
-    // restartSession doesn't re-apply config, so webhooks silently break after pod restarts.
     await this.wahaService.resetSession(
       worker.internalIp,
       worker.apiKeyEnc,
