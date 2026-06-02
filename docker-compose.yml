@@ -35,7 +35,7 @@ services:
       - internal
 
   evolution:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:latest
     restart: unless-stopped
     depends_on:
       postgres:
