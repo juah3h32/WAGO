@@ -247,8 +247,8 @@ function ConnectionsPageContent() {
               )}
               {newQr && (
                 <div className="flex flex-col items-center gap-4">
-                  <div className="rounded-2xl bg-[#111] p-3 shadow-lg">
-                    <img src={`data:${newQr.mimetype};base64,${newQr.value}`} alt="QR WhatsApp" className="h-56 w-56 rounded-xl" style={{filter:"invert(1)"}}/>
+                  <div className="rounded-2xl bg-white p-4 shadow-lg">
+                    <img src={`data:${newQr.mimetype};base64,${newQr.value}`} alt="QR WhatsApp" className="h-60 w-60 rounded-lg"/>
                   </div>
                   <p className="text-sm text-text-secondary text-center max-w-xs">
                     WhatsApp → <strong className="text-text-primary">Dispositivos vinculados</strong> → Vincular dispositivo → Escaneá
@@ -534,8 +534,8 @@ function ConnectionDetailModal({
             <div className="px-6 py-6 flex flex-col items-center gap-4">
               {qr && !wahaConnecting ? (
                 <>
-                  <div className="rounded-2xl bg-[#111] p-3 shadow-xl">
-                    <img src={`data:${qr.mimetype};base64,${qr.value}`} alt="QR" className="h-52 w-52 rounded-xl" style={{filter:"invert(1)"}}/>
+                  <div className="rounded-2xl bg-white p-4 shadow-xl">
+                    <img src={`data:${qr.mimetype};base64,${qr.value}`} alt="QR" className="h-60 w-60 rounded-lg"/>
                   </div>
                   <p className="text-sm text-text-secondary text-center max-w-xs">
                     WhatsApp → <strong className="text-text-primary">Dispositivos vinculados</strong> → Vincular dispositivo → Escaneá

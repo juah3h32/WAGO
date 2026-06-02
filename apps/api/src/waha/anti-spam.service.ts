@@ -72,10 +72,11 @@ export class AntiSpamService implements OnModuleInit {
 
   /**
    * Warmup day limits: index = days since connected.
-   * Day 0 → 10 msgs max, Day 1 → 30, Day 2 → 80, Day 3+ → unlimited.
-   * Sources: industry practice, WABotWorld & Maytapi whitepapers.
+   * Raised for bot/customer-service use case — these are RESPONSE messages
+   * to incoming contacts, not outbound bulk. Low limits break bot functionality.
+   * Day 0 → 500, Day 1 → 1000, Day 2+ → unlimited.
    */
-  private readonly WARMUP_DAILY_LIMITS = [10, 30, 80, 200, Infinity];
+  private readonly WARMUP_DAILY_LIMITS = [500, 1000, Infinity];
 
   /**
    * Minimum seconds between session restarts.
