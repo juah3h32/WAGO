@@ -9,7 +9,8 @@ import {
   ValidationArguments,
 } from 'class-validator';
 
-// Block SSRF: reject localhost, private IP ranges, and non-http(s) schemes
+// Block SSRF: reject localhost, private IP ranges, and non-http(s) schemes.
+// Bypass when ALLOW_LOCAL_WEBHOOKS=true (dev/testing only).
 function IsPublicHttpUrl(options?: ValidationOptions) {
   return function (object: object, propertyName: string) {
     registerDecorator({
@@ -23,6 +24,12 @@ function IsPublicHttpUrl(options?: ValidationOptions) {
       validator: {
         validate(value: any, _args: ValidationArguments) {
           if (typeof value !== 'string') return false;
+
+          // Allow local URLs in dev/test environments
+          if (process.env.ALLOW_LOCAL_WEBHOOKS === 'true') {
+            try { new URL(value); return true; } catch { return false; }
+          }
+
           let parsed: URL;
           try {
             parsed = new URL(value);
@@ -67,7 +74,7 @@ function IsPublicHttpUrl(options?: ValidationOptions) {
 }
 
 export class CreateWebhookDto {
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   @IsPublicHttpUrl()
   url!: string;
 
@@ -78,7 +85,7 @@ export class CreateWebhookDto {
 
 export class UpdateWebhookDto {
   @IsOptional()
-  @IsUrl()
+  @IsUrl({ require_tld: false })
   @IsPublicHttpUrl()
   url?: string;
 

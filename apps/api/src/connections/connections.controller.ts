@@ -384,7 +384,7 @@ export class ConnectionsController {
     }
     this.enforceConnectionScope(user, id);
 
-    let worker = await this.workersService.getWorkerForSession(id);
+    const worker = await this.workersService.getWorkerForSession(id);
 
     // If no worker OR assigned worker is unreachable, re-provision from scratch
     if (!worker) {
