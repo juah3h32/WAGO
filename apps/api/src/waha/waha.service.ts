@@ -269,7 +269,7 @@ export class WahaService {
     if (!chatId) return; // Evolution API requires a recipient for typing presence
     const headers = this.buildHeaders(apiKey);
     try {
-      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/sendPresence/${sessionName}`), headers, {
         number: chatId.replace('@s.whatsapp.net', '').replace('@c.us', ''),
         options: { presence: 'composing', delay: 1000 },
       });
@@ -280,7 +280,7 @@ export class WahaService {
     if (!chatId) return;
     const headers = this.buildHeaders(apiKey);
     try {
-      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/sendPresence/${sessionName}`), headers, {
         number: chatId.replace('@s.whatsapp.net', '').replace('@c.us', ''),
         options: { presence: 'paused', delay: 500 },
       });
@@ -496,7 +496,7 @@ export class WahaService {
   async startTyping(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<void> {
     const headers = this.buildHeaders(apiKey);
     try {
-      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/sendPresence/${sessionName}`), headers, {
         number: this.toNumber(chatId),
         options: { presence: 'composing', delay: 4000 },
       });
@@ -506,7 +506,7 @@ export class WahaService {
   async stopTyping(workerUrl: string, apiKey: string, sessionName: string, chatId: string): Promise<void> {
     const headers = this.buildHeaders(apiKey);
     try {
-      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/presence/${sessionName}`), headers, {
+      await this.request<void>('POST', this.buildUrl(workerUrl, `/chat/sendPresence/${sessionName}`), headers, {
         number: this.toNumber(chatId),
         options: { presence: 'paused', delay: 500 },
       });
