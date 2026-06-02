@@ -142,19 +142,6 @@ export class WahaService {
     }
 
     const result = await this.request<any>('POST', url, headers, body);
-
-    // Enable full history sync so WhatsApp chat history loads on connect.
-    // Fire-and-forget: if it fails the instance still works, just without history.
-    this.request<any>('POST', this.buildUrl(workerUrl, `/settings/set/${sessionName}`), headers, {
-      rejectCall: false,
-      msgCall: '',
-      groupsIgnore: false,
-      alwaysOnline: false,
-      readMessages: false,
-      readStatus: false,
-      syncFullHistory: true,
-    }).catch(() => { /* non-critical */ });
-
     // QR will be in result.qrcode.base64 when ready; health/QR poll picks it up
     return this._mapInstance(result?.instance ?? result);
   }
