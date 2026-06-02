@@ -14,8 +14,12 @@ const AI_RESPONSE_QUEUE = 'ai-response';
 
 interface WahaEvent {
   event: string;
-  session: string;
+  // WAHA format uses "session"; Evolution API format uses "instance" — normalised below
+  session?: string;
+  instance?: string;
+  // WAHA format uses "payload"; Evolution API format uses "data" — normalised below
   payload?: unknown;
+  data?: unknown;
   [key: string]: unknown;
 }
 
@@ -69,14 +73,18 @@ export class EventsController {
       throw new UnauthorizedException('Invalid ingress secret');
     }
 
-    this.logger.log(
-      `Received WAHA event: ${event.event} for session: ${event.session}`,
-    );
+    // Normalise format differences between WAHA and Evolution API:
+    // WAHA:          { event, session, payload }
+    // Evolution API: { event, instance, data }
+    const sessionName: string = (event.session ?? event.instance ?? 'default') as string;
+    const payload: any = event.payload ?? event.data;
+
+    this.logger.log(`Received WAHA event: ${event.event} for session: ${sessionName}`);
 
     // 1. Look up the session using workerId (always present after validation above)
     let session: any;
     if (
-      event.session === 'default' &&
+      sessionName === 'default' &&
       this.wahaService.getMaxSessions() === 1
     ) {
       const sessions = await this.db
@@ -94,28 +102,25 @@ export class EventsController {
       const sessions = await this.db
         .select()
         .from(wahaSessions)
-        .where(eq(wahaSessions.sessionName, event.session));
+        .where(eq(wahaSessions.sessionName, sessionName));
       session = sessions[0];
     }
 
     if (!session) {
-      this.logger.warn(
-        `No session found for sessionName: ${event.session}, ignoring event`,
-      );
+      this.logger.warn(`No session found for sessionName: ${sessionName}, ignoring event`);
       return { received: true };
     }
 
     // 1b. If this is an incoming text message, enqueue an AI auto-response job (fire-and-forget)
     if (
       (event.event === 'messages.upsert' || event.event === 'message') &&
-      (event.payload as any)?.key?.fromMe === false &&
-      (event.payload as any)?.message
+      payload?.key?.fromMe === false &&
+      payload?.message
     ) {
-      const msgPayload = event.payload as any;
-      const chatId: string | undefined = msgPayload?.key?.remoteJid;
+      const chatId: string | undefined = payload?.key?.remoteJid;
       const text: string | undefined =
-        msgPayload?.message?.conversation ||
-        msgPayload?.message?.extendedTextMessage?.text;
+        payload?.message?.conversation ||
+        payload?.message?.extendedTextMessage?.text;
 
       if (chatId && text) {
         this.aiResponseQueue
@@ -143,7 +148,7 @@ export class EventsController {
     // Evolution API embeds media info inside message.{documentMessage|imageMessage|...}
     // We extract it into a top-level `media` object with a proxied download URL so
     // consumers never need access to internal worker hostnames or WhatsApp CDN tokens.
-    const rewrittenPayload = { ...(event.payload as any) };
+    const rewrittenPayload = { ...(payload as any) };
     const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
 
     const MEDIA_MESSAGE_TYPES = [
