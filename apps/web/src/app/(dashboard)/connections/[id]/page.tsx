@@ -342,14 +342,22 @@ function ConnectionDetailPageContent() {
                     {wahaConnecting ? "QR escaneado — conectando…"
                       : setupSeconds > 0 ? `Iniciando sesión… ${setupSeconds}s` : "Iniciando sesión…"}
                   </p>
-                  {!wahaConnecting && setupSeconds >= 15 && (
-                    <button onClick={handleRestart} disabled={restarting}
-                      className="text-xs text-wa-green underline hover:text-wa-green-dark disabled:opacity-50">
-                      {restarting ? "Reiniciando…" : "Reintentar"}
-                    </button>
-                  )}
-                  {qrError && setupSeconds >= 20 && (
-                    <p className="text-xs text-status-error-text text-center px-3">{qrError}</p>
+                  {!wahaConnecting && (
+                    <div className="flex flex-col items-center gap-1.5">
+                      {setupSeconds >= 15 && (
+                        <button onClick={handleRestart} disabled={restarting}
+                          className="text-xs text-wa-green underline hover:text-wa-green-dark disabled:opacity-50">
+                          {restarting ? "Reiniciando…" : "Reintentar"}
+                        </button>
+                      )}
+                      <button onClick={handleReconnect} disabled={reconnecting}
+                        className="text-xs text-blue-400 underline hover:text-blue-300 disabled:opacity-50">
+                        {reconnecting ? "Reconectando…" : "Nuevo QR"}
+                      </button>
+                      {qrError && setupSeconds >= 20 && (
+                        <p className="text-xs text-status-error-text text-center px-3">{qrError}</p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

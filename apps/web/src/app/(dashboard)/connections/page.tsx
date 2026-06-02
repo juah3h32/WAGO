@@ -551,11 +551,19 @@ function ConnectionDetailModal({
                     {wahaConnecting ? "QR escaneado — conectando…"
                       : setupSeconds > 0 ? `Iniciando… ${setupSeconds}s` : "Iniciando sesión…"}
                   </p>
-                  {setupSeconds >= 15 && !wahaConnecting && (
-                    <button onClick={handleRestart} disabled={restarting}
-                      className="text-xs text-wa-green underline disabled:opacity-50">
-                      {restarting ? "Reiniciando…" : "Reintentar"}
-                    </button>
+                  {!wahaConnecting && (
+                    <div className="flex flex-col items-center gap-1.5">
+                      {setupSeconds >= 15 && (
+                        <button onClick={handleRestart} disabled={restarting}
+                          className="text-xs text-wa-green underline disabled:opacity-50">
+                          {restarting ? "Reiniciando…" : "Reintentar"}
+                        </button>
+                      )}
+                      <button onClick={handleReconnect} disabled={reconnecting}
+                        className="text-xs text-blue-400 underline disabled:opacity-50">
+                        {reconnecting ? "Reconectando…" : "Nuevo QR"}
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

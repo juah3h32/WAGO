@@ -43,6 +43,7 @@ export function WebhookList({ connectionId }: { connectionId: string }) {
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  const [newWebhookSecret, setNewWebhookSecret] = useState<{ id: string; secret: string } | null>(null);
   const [revealedSecrets, setRevealedSecrets] = useState<Set<string>>(
     new Set()
   );
@@ -93,14 +94,18 @@ export function WebhookList({ connectionId }: { connectionId: string }) {
     setFormError(null);
 
     try {
-      await apiFetch(`/api/connections/${connectionId}/webhooks`, {
+      const created = await apiFetch(`/api/connections/${connectionId}/webhooks`, {
         method: "POST",
         body: JSON.stringify({ url: formUrl.trim(), events: formEvents }),
       });
       setFormUrl("");
       setFormEvents([]);
       setShowForm(false);
-      toast("Webhook created", "success");
+      // Guardar el secret completo — solo está disponible en la respuesta de creación
+      if (created?.signingSecret && !created.signingSecret.endsWith("…")) {
+        setNewWebhookSecret({ id: created.id, secret: created.signingSecret });
+      }
+      toast("Webhook creado", "success");
       await fetchWebhooks();
     } catch (err) {
       setFormError(
@@ -242,6 +247,31 @@ export function WebhookList({ connectionId }: { connectionId: string }) {
       {error && (
         <div className="mt-3 rounded-lg border border-status-error-border bg-status-error-bg p-3 text-sm text-status-error-text">
           {error}
+        </div>
+      )}
+
+      {/* Signing secret — solo visible una vez al crear */}
+      {newWebhookSecret && (
+        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <p className="text-xs font-semibold text-amber-400 mb-1">Signing Secret — copialo ahora, no se vuelve a mostrar completo</p>
+          <p className="text-xs text-amber-300/70 mb-2">
+            Pegalo en <code className="bg-bg-elevated px-1 rounded">WAGO_WEBHOOK_SECRET</code> en el <code className="bg-bg-elevated px-1 rounded">.env</code> de GO2026
+          </p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 break-all text-xs font-mono text-text-primary bg-bg-elevated rounded-lg px-3 py-2 border border-border-secondary">
+              {newWebhookSecret.secret}
+            </code>
+            <button
+              onClick={() => { navigator.clipboard.writeText(newWebhookSecret.secret); toast("Copiado", "success"); }}
+              className="shrink-0 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all">
+              <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>
+              </svg>
+            </button>
+          </div>
+          <button onClick={() => setNewWebhookSecret(null)} className="mt-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors">
+            Ya lo guardé ✓
+          </button>
         </div>
       )}
 

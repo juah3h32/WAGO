@@ -305,12 +305,15 @@ export class ConnectionsController {
     // Non-blocking: check WAHA status once and respond immediately.
     // The frontend polls every 2.5s — no need for server-side retry loops.
     let wahaStatus: string | null = null;
+    let workerUnreachable = false;
     try {
       const session = await this.wahaService.getSession(
         worker.internalIp, worker.apiKeyEnc, wahaName,
       );
       wahaStatus = session?.status ?? null;
-    } catch { /* worker not ready yet */ }
+    } catch {
+      workerUnreachable = true;
+    }
 
     if (wahaStatus === 'WORKING') {
       // Update DB and return connected
@@ -353,6 +356,20 @@ export class ConnectionsController {
         // Return 503 gracefully so the client keeps polling without showing a hard error
         throw new ServiceUnavailableException('QR not ready yet, please wait');
       }
+    }
+
+    // Worker unreachable (pod crashed/IP changed) — re-provision in background.
+    if (workerUnreachable) {
+      this.logger.warn(`Worker ${worker.id} unreachable on QR poll for ${id} — re-provisioning`);
+      this.workersService.unassignSession(worker.id, id).catch(() => {});
+      this.db.update(wahaSessions)
+        .set({ status: 'pending', workerId: null, updatedAt: new Date() })
+        .where(eq(wahaSessions.id, id))
+        .catch(() => {});
+      this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+        this.logger.error(`Re-provision on QR poll for ${id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      throw new ServiceUnavailableException('Worker reassigned, please wait');
     }
 
     // STOPPED, FAILED, or null: instance may just have been (re)created — try QR optimistically.
@@ -474,11 +491,18 @@ export class ConnectionsController {
           worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl, true,
         );
       } catch (secondErr) {
-        // Both attempts failed — mark as failed so the UI shows the error state
-        await this.db.update(wahaSessions).set({ status: 'failed', updatedAt: new Date() }).where(eq(wahaSessions.id, id));
-        throw new ServiceUnavailableException(
-          `No se pudo reconectar: ${secondErr instanceof Error ? secondErr.message : 'Error interno'}`,
-        );
+        // Both attempts failed — worker is unreachable (pod crashed/IP changed).
+        // Re-provision from scratch: unassign the dead worker and find/create a new one.
+        this.logger.warn(`Worker unreachable for ${id} — re-provisioning from scratch`);
+        await this.workersService.unassignSession(worker.id, id).catch(() => {});
+        await this.db.update(wahaSessions)
+          .set({ status: 'pending', workerId: null, updatedAt: new Date() })
+          .where(eq(wahaSessions.id, id));
+        this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+          this.logger.error(`Re-provision after reconnect failure for ${id}: ${err instanceof Error ? err.message : String(err)}`);
+        });
+        const [pending] = await this.db.select().from(wahaSessions).where(eq(wahaSessions.id, id));
+        return this.mapConnection(pending);
       }
     }
 
