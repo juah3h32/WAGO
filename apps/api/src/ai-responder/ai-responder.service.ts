@@ -150,7 +150,8 @@ export class AiResponderService {
       this.logger.warn(`Session ${connectionId} not found — skipping AI response`);
       return;
     }
-    const resolvedSessionName: string = session.sessionName;
+    // resolveSessionName maps DB name → 'default' when WAHA_MAX_SESSIONS=1 (Core mode)
+    const resolvedSessionName: string = this.wahaService.resolveSessionName(session.sessionName);
 
     let resolvedIp: string | undefined;
     let resolvedApiKey: string | undefined;
