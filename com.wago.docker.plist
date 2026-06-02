@@ -8,14 +8,12 @@
     <array>
         <string>/bin/bash</string>
         <string>-c</string>
-        <string>sleep 20 &amp;&amp; cd /Users/govideo/Documents/WAGO &amp;&amp; /usr/local/bin/docker compose up evolution postgres redis api -d</string>
+        <string>until /opt/homebrew/bin/docker info &gt;/dev/null 2&gt;&amp;1; do sleep 5; done &amp;&amp; cd "/Users/govideo/Documents/PAGINAS WEB/WAGO" &amp;&amp; /opt/homebrew/bin/docker compose up evolution redis -d</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
-    <key>StartInterval</key>
-    <integer>0</integer>
     <key>StandardOutPath</key>
     <string>/tmp/wago-docker.log</string>
     <key>StandardErrorPath</key>
@@ -23,7 +21,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
     </dict>
 </dict>
 </plist>

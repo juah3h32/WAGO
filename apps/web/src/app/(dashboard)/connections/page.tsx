@@ -677,6 +677,16 @@ function ConnectionDetailModal({
                       </div>
                     </div>
                   </div>
+
+                  {/* Clave de integración GO2026 */}
+                  <IntegrationKeySection
+                    connectionId={conn.id}
+                    apiUrl={apiUrl}
+                    activeToken={activeToken}
+                    onCreateToken={handleCreateToken}
+                    creatingToken={creatingToken}
+                    newTokenValue={newTokenValue}
+                  />
                 </div>
               )}
 
@@ -703,6 +713,107 @@ function ConnectionDetailModal({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Integration Key Section ──────────────────────────────────────────────────
+function IntegrationKeySection({ connectionId, apiUrl, activeToken, onCreateToken, creatingToken, newTokenValue }: {
+  connectionId: string; apiUrl: string;
+  activeToken: any; onCreateToken: () => void; creatingToken: boolean; newTokenValue: string | null;
+}) {
+  const { toast } = useToast();
+  const [integrationKey, setIntegrationKey] = useState<string | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("https://grupo-ortiz.com/api/webhook/whatsapp");
+
+  // Token completo: solo disponible justo después de crear, o el del env (wh_...)
+  const fullToken = newTokenValue; // solo si acaba de crearse
+
+  async function handleGenerate() {
+    if (!fullToken) {
+      toast("Revocá el token actual y generá uno nuevo — la clave necesita el token completo", "error");
+      return;
+    }
+    if (!webhookUrl.startsWith("http")) {
+      toast("URL inválida", "error"); return;
+    }
+    setGenerating(true);
+    try {
+      const webhookRes = await apiFetch(`/api/connections/${connectionId}/webhooks`, {
+        method: "POST",
+        body: JSON.stringify({ url: webhookUrl, events: ["message", "message.reaction", "session.status"] }),
+      });
+
+      if (!webhookRes?.signingSecret || webhookRes.signingSecret.endsWith("…")) {
+        throw new Error("No se pudo obtener el signing secret del webhook");
+      }
+
+      const payload = { url: apiUrl, token: fullToken, connectionId, webhookSecret: webhookRes.signingSecret };
+
+      // URL-safe encoding — evita problemas de btoa con caracteres especiales
+      const key = "wago_v1_" + encodeURIComponent(JSON.stringify(payload));
+      setIntegrationKey(key);
+      toast("Clave generada", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al generar clave", "error");
+    } finally { setGenerating(false); }
+  }
+
+  return (
+    <div className="rounded-xl border border-border-primary bg-bg-elevated overflow-hidden">
+      <div className="px-4 py-3 border-b border-border-primary">
+        <p className="text-xs font-semibold text-text-primary">Clave de integración GO2026</p>
+        <p className="text-[10px] text-text-tertiary mt-0.5">Pégala en el panel admin de GO2026 → WhatsApp → Conectar WAGO</p>
+      </div>
+
+      {!fullToken ? (
+        <div className="px-4 py-3 space-y-2">
+          <p className="text-[10px] text-amber-400">Para generar la clave necesitás el token completo.</p>
+          <p className="text-[10px] text-text-tertiary">1. Revocá el token actual (si existe)  2. Generá uno nuevo  3. Volvé aquí antes de cerrar el modal</p>
+          {!activeToken && (
+            <button onClick={onCreateToken} disabled={creatingToken}
+              className="rounded-lg bg-wa-green px-3 py-1.5 text-xs font-semibold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50">
+              {creatingToken ? "Generando…" : "Generar token ahora"}
+            </button>
+          )}
+        </div>
+      ) : !integrationKey ? (
+        <div className="px-4 py-3 space-y-3">
+          <div className="space-y-1">
+            <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-wider">URL de tu GO2026</p>
+            <input
+              value={webhookUrl}
+              onChange={e => setWebhookUrl(e.target.value)}
+              placeholder="https://... o http://localhost:4321/api/webhook/whatsapp"
+              className="block w-full rounded-lg border border-border-secondary bg-bg-secondary px-3 py-2 text-xs font-mono text-text-primary placeholder:text-text-tertiary focus:border-wa-green focus:outline-none"
+            />
+            <p className="text-[10px] text-text-tertiary">Local: <code>http://localhost:4321/api/webhook/whatsapp</code></p>
+          </div>
+          <button onClick={handleGenerate} disabled={generating}
+            className="w-full rounded-lg bg-wa-green py-2 text-xs font-semibold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50">
+            {generating ? "Generando…" : "Generar clave de integración"}
+          </button>
+        </div>
+      ) : (
+        <div className="px-4 py-3 space-y-2">
+          <p className="text-[10px] text-amber-400 font-semibold">Copia esta clave y pégala en GO2026 Admin → WhatsApp → Conectar WAGO</p>
+          <div className="flex items-start gap-2">
+            <code className="flex-1 text-[10px] font-mono text-text-primary bg-bg-secondary rounded-lg px-3 py-2 border border-border-secondary break-all leading-relaxed">
+              {integrationKey}
+            </code>
+            <button onClick={() => { navigator.clipboard.writeText(integrationKey); toast("Copiada", "success"); }}
+              className="shrink-0 mt-0.5 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all">
+              <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+            </button>
+          </div>
+          <button onClick={() => setIntegrationKey(null)} className="text-[10px] text-text-tertiary hover:text-text-secondary transition-colors">
+            Generar otra
+          </button>
+        </div>
+      )}
     </div>
   );
 }
