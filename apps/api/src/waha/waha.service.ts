@@ -142,6 +142,19 @@ export class WahaService {
     }
 
     const result = await this.request<any>('POST', url, headers, body);
+
+    // Enable full history sync so WhatsApp chat history loads on connect.
+    // Fire-and-forget: if it fails the instance still works, just without history.
+    this.request<any>('POST', this.buildUrl(workerUrl, `/settings/set/${sessionName}`), headers, {
+      rejectCall: false,
+      msgCall: '',
+      groupsIgnore: false,
+      alwaysOnline: false,
+      readMessages: false,
+      readStatus: false,
+      syncFullHistory: true,
+    }).catch(() => { /* non-critical */ });
+
     // QR will be in result.qrcode.base64 when ready; health/QR poll picks it up
     return this._mapInstance(result?.instance ?? result);
   }
@@ -291,7 +304,7 @@ export class WahaService {
 
   async getChats(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaChatResponse[]> {
     const headers = this.buildHeaders(apiKey);
-    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findChats/${sessionName}`), headers, { limit: 100 });
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findChats/${sessionName}`), headers, { where: {}, orderBy: { updatedAt: 'desc' }, take: 100 });
     const chats = Array.isArray(result) ? result : (result?.chats ?? []);
     // Sort by most-recently-updated descending before returning
     const sorted = [...chats].sort((a: any, b: any) => {
