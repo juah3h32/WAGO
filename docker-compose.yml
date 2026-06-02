@@ -13,6 +13,11 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   waha:
     image: devlikeapro/waha:latest
@@ -30,14 +35,13 @@ services:
       - internal
 
   evolution:
-    # Build from evolution-foundation/evolution-api source (Baileys 7.x)
-    build:
-      context: ./services/evolution-api
-      dockerfile: Dockerfile
+    image: atendai/evolution-api:latest
     restart: unless-stopped
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
     ports:
       - "3002:8080"
     extra_hosts:
@@ -53,6 +57,7 @@ services:
       AUTHENTICATION_API_KEY: ${WAHA_API_KEY:-devkey}
       AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
       DATABASE_PROVIDER: postgresql
+      DATABASE_URL: "postgresql://evolution:evolution@postgres:5432/evolution"
       DATABASE_CONNECTION_URI: "postgresql://evolution:evolution@postgres:5432/evolution"
       DATABASE_CONNECTION_CLIENT_NAME: evolution_db
       DATABASE_SAVE_DATA_INSTANCE: "true"
