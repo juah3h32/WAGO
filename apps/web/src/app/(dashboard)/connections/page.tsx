@@ -729,6 +729,15 @@ interface AiResponderConfig {
   maxTokens: number;
 }
 
+interface ActivityEvent {
+  ts: number; type: "received" | "responded" | "error" | "throttled" | "disabled";
+  contact: string; detail?: string;
+}
+interface ActivityData {
+  stats: { received: number; responded: number; errors: number; lastActivity: number | null };
+  events: ActivityEvent[];
+}
+
 function AiResponderTab({ connectionId }: { connectionId: string }) {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
@@ -736,16 +745,14 @@ function AiResponderTab({ connectionId }: { connectionId: string }) {
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; response?: string; error?: string } | null>(null);
   const [config, setConfig] = useState<AiResponderConfig>({
-    enabled: false,
-    provider: "anthropic",
-    model: "claude-haiku-4-5-20251001",
-    apiKey: null,
-    systemPrompt: null,
-    maxTokens: 500,
+    enabled: false, provider: "anthropic", model: "claude-haiku-4-5-20251001",
+    apiKey: null, systemPrompt: null, maxTokens: 500,
   });
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [apiKeySet, setApiKeySet] = useState(false);
+  const [activity, setActivity] = useState<ActivityData | null>(null);
 
+  // Load config once
   useEffect(() => {
     let alive = true;
     apiFetch(`/api/connections/${connectionId}/ai-responder`)
@@ -757,6 +764,19 @@ function AiResponderTab({ connectionId }: { connectionId: string }) {
       .catch(() => {})
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
+  }, [connectionId]);
+
+  // Poll activity every 4s
+  useEffect(() => {
+    let alive = true;
+    const poll = () => {
+      apiFetch(`/api/connections/${connectionId}/ai-responder/activity`)
+        .then((d: ActivityData) => { if (alive) setActivity(d); })
+        .catch(() => {});
+    };
+    poll();
+    const t = setInterval(poll, 4000);
+    return () => { alive = false; clearInterval(t); };
   }, [connectionId]);
 
   async function handleSave() {
@@ -808,8 +828,55 @@ function AiResponderTab({ connectionId }: { connectionId: string }) {
     return <p className="text-sm text-text-tertiary py-4">Cargando configuración…</p>;
   }
 
+  const typeLabel: Record<string, { label: string; color: string }> = {
+    received:  { label: "Recibido",   color: "text-blue-400" },
+    responded: { label: "Respondido", color: "text-wa-green" },
+    error:     { label: "Error",      color: "text-status-error-text" },
+    throttled: { label: "Throttle",   color: "text-amber-400" },
+    disabled:  { label: "Inactivo",   color: "text-text-tertiary" },
+  };
+
+  function fmtTime(ts: number) {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  }
+
   return (
     <div className="space-y-5">
+      {/* Activity panel */}
+      {activity && (
+        <div className="rounded-xl border border-border-primary bg-bg-elevated overflow-hidden">
+          {/* Stats row */}
+          <div className="grid grid-cols-3 divide-x divide-border-primary border-b border-border-primary">
+            {[
+              { label: "Recibidos", value: activity.stats.received, color: "text-blue-400" },
+              { label: "Respondidos", value: activity.stats.responded, color: "text-wa-green" },
+              { label: "Errores", value: activity.stats.errors, color: activity.stats.errors > 0 ? "text-status-error-text" : "text-text-tertiary" },
+            ].map(({ label, value, color }) => (
+              <div key={label} className="px-3 py-2.5 text-center">
+                <p className={`text-lg font-bold ${color}`}>{value}</p>
+                <p className="text-[10px] text-text-tertiary uppercase tracking-wider">{label}</p>
+              </div>
+            ))}
+          </div>
+          {/* Recent events */}
+          <div className="max-h-36 overflow-y-auto">
+            {activity.events.length === 0 ? (
+              <p className="text-xs text-text-tertiary text-center py-4">Sin actividad aún — esperando mensajes…</p>
+            ) : activity.events.slice(0, 15).map((ev, i) => {
+              const t = typeLabel[ev.type] ?? { label: ev.type, color: "text-text-tertiary" };
+              return (
+                <div key={i} className="flex items-center gap-2 px-3 py-1.5 border-b border-border-primary/40 last:border-0 text-xs">
+                  <span className={`shrink-0 w-20 font-semibold ${t.color}`}>{t.label}</span>
+                  <span className="text-text-secondary font-mono">{ev.contact}</span>
+                  {ev.detail && <span className="text-text-tertiary truncate flex-1">{ev.detail}</span>}
+                  <span className="shrink-0 text-text-tertiary font-mono ml-auto">{fmtTime(ev.ts)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Enable toggle */}
       <div className="flex items-center justify-between rounded-xl border border-border-primary bg-bg-elevated px-4 py-3">
         <div>

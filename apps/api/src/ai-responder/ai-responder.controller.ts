@@ -46,7 +46,6 @@ export class AiResponderController {
     return sessions[0];
   }
 
-  /** Never expose the raw API key — only tell the client whether one is set. */
   private sanitize(config: any) {
     const { apiKey, ...rest } = config;
     return { ...rest, apiKeySet: !!apiKey, apiKey: apiKey ? MASKED : null };
@@ -76,12 +75,7 @@ export class AiResponderController {
     @Body() dto: UpsertAiResponderDto,
   ) {
     await this.assertConnectionOwnership(connectionId, user.sub);
-
-    // If frontend sent the masked placeholder, keep the existing key
-    if (dto.apiKey === MASKED || dto.apiKey === '') {
-      delete dto.apiKey;
-    }
-
+    if (dto.apiKey === MASKED || dto.apiKey === '') delete dto.apiKey;
     const config = await this.aiResponderService.upsertConfig(connectionId, user.sub, dto);
     return this.sanitize(config);
   }
@@ -93,5 +87,18 @@ export class AiResponderController {
   ) {
     await this.assertConnectionOwnership(connectionId, user.sub);
     return this.aiResponderService.testConfig(connectionId, user.sub);
+  }
+
+  /** Activity log — shows recent message events without exposing content */
+  @Get('activity')
+  async getActivity(
+    @Param('connectionId') connectionId: string,
+    @CurrentUser() user: { sub: string },
+  ) {
+    await this.assertConnectionOwnership(connectionId, user.sub);
+    return {
+      stats: this.aiResponderService.getStats(connectionId),
+      events: this.aiResponderService.getActivity(connectionId),
+    };
   }
 }

@@ -35,9 +35,45 @@ export interface AiResponderJobData {
   incomingMessage: string;
 }
 
+export interface ActivityEvent {
+  ts: number;          // Unix ms
+  type: 'received' | 'responded' | 'error' | 'throttled' | 'disabled';
+  contact: string;     // masked: last 4 digits only
+  detail?: string;     // error reason, never message content
+}
+
 @Injectable()
 export class AiResponderService {
   private readonly logger = new Logger(AiResponderService.name);
+
+  // In-memory activity log per connection — last 50 events, no message content
+  private readonly activityLog = new Map<string, ActivityEvent[]>();
+
+  private logActivity(connectionId: string, event: ActivityEvent) {
+    if (!this.activityLog.has(connectionId)) this.activityLog.set(connectionId, []);
+    const log = this.activityLog.get(connectionId)!;
+    log.push(event);
+    if (log.length > 50) log.shift(); // keep last 50
+  }
+
+  getActivity(connectionId: string): ActivityEvent[] {
+    return (this.activityLog.get(connectionId) ?? []).slice().reverse(); // newest first
+  }
+
+  getStats(connectionId: string): { received: number; responded: number; errors: number; lastActivity: number | null } {
+    const log = this.activityLog.get(connectionId) ?? [];
+    return {
+      received: log.filter(e => e.type === 'received').length,
+      responded: log.filter(e => e.type === 'responded').length,
+      errors: log.filter(e => e.type === 'error' || e.type === 'throttled').length,
+      lastActivity: log.length > 0 ? log[log.length - 1].ts : null,
+    };
+  }
+
+  private maskContact(chatId: string): string {
+    const num = chatId.replace('@s.whatsapp.net', '').replace('@c.us', '').replace('@g.us', '');
+    return num.length > 4 ? `****${num.slice(-4)}` : '****';
+  }
 
   constructor(
     @Inject(DRIZZLE_TOKEN) private readonly db: any,
@@ -132,10 +168,17 @@ export class AiResponderService {
   async processIncomingMessage(data: AiResponderJobData): Promise<void> {
     const { connectionId, userId, chatId, incomingMessage } = data;
 
+    const contact = this.maskContact(chatId);
+    const now = () => Date.now();
+
+    // Log message received
+    this.logActivity(connectionId, { ts: now(), type: 'received', contact });
+
     // 1. Load config — skip if not enabled or missing
     const config = await this.getConfig(connectionId, userId);
     if (!config || !config.enabled || !config.apiKey) {
       this.logger.debug(`AI responder disabled or unconfigured for connection ${connectionId}`);
+      this.logActivity(connectionId, { ts: now(), type: 'disabled', contact, detail: 'Auto-responder desactivado o sin API key' });
       return;
     }
 
@@ -148,6 +191,7 @@ export class AiResponderService {
     const session = sessions[0];
     if (!session) {
       this.logger.warn(`Session ${connectionId} not found — skipping AI response`);
+      this.logActivity(connectionId, { ts: now(), type: 'error', contact, detail: 'Sesión no encontrada' });
       return;
     }
     // resolveSessionName maps DB name → 'default' when WAHA_MAX_SESSIONS=1 (Core mode)
@@ -167,6 +211,7 @@ export class AiResponderService {
 
     if (!resolvedIp || !resolvedApiKey) {
       this.logger.warn(`Missing worker info for connection ${connectionId} — skipping AI response`);
+      this.logActivity(connectionId, { ts: now(), type: 'error', contact, detail: 'Worker no disponible' });
       return;
     }
 
@@ -174,15 +219,12 @@ export class AiResponderService {
     let conversationMessages: { role: 'user' | 'assistant'; content: string }[] = [];
     try {
       const history = await this.wahaService.getMessages(resolvedIp, resolvedApiKey, resolvedSessionName, chatId);
-      const recentMessages = history
-        .filter((m) => m.body && m.body.trim())
-        .slice(-10);
-
+      const recentMessages = history.filter((m) => m.body && m.body.trim()).slice(-10);
       conversationMessages = recentMessages.map((m) => ({
         role: m.fromMe ? ('assistant' as const) : ('user' as const),
         content: m.body,
       }));
-    } catch (err) {
+    } catch {
       this.logger.warn(`Could not load message history for ${connectionId}:${chatId} — using incoming only`);
       conversationMessages = [{ role: 'user', content: incomingMessage }];
     }
@@ -198,12 +240,15 @@ export class AiResponderService {
     try {
       aiResponse = await this.callAiApi(config, conversationMessages);
     } catch (err) {
-      this.logger.error(`AI API call failed for connection ${connectionId}: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.error(`AI API call failed for connection ${connectionId}: ${detail}`);
+      this.logActivity(connectionId, { ts: now(), type: 'error', contact, detail: 'Error al llamar API de IA' });
       return;
     }
 
     if (!aiResponse || !aiResponse.trim()) {
       this.logger.warn(`AI returned empty response for connection ${connectionId}`);
+      this.logActivity(connectionId, { ts: now(), type: 'error', contact, detail: 'IA devolvió respuesta vacía' });
       return;
     }
 
@@ -211,22 +256,21 @@ export class AiResponderService {
     try {
       await this.antiSpamService.checkAndThrottle(connectionId, chatId, aiResponse.length);
     } catch (err) {
-      this.logger.warn(`Anti-spam throttle blocked AI response for ${connectionId}:${chatId}: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Anti-spam throttle blocked AI response for ${connectionId}:${chatId}: ${detail}`);
+      this.logActivity(connectionId, { ts: now(), type: 'throttled', contact, detail: 'Límite anti-spam' });
       return;
     }
 
-    // 5. Send typing presence indicator + send message
+    // 5. Send message
     try {
-      await this.wahaService.sendText(
-        resolvedIp,
-        resolvedApiKey,
-        resolvedSessionName,
-        chatId,
-        aiResponse,
-      );
+      await this.wahaService.sendText(resolvedIp, resolvedApiKey, resolvedSessionName, chatId, aiResponse);
       this.logger.log(`AI response sent to ${chatId} on connection ${connectionId}`);
+      this.logActivity(connectionId, { ts: now(), type: 'responded', contact });
     } catch (err) {
-      this.logger.error(`Failed to send AI response for ${connectionId}: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to send AI response for ${connectionId}: ${detail}`);
+      this.logActivity(connectionId, { ts: now(), type: 'error', contact, detail: 'Error al enviar respuesta' });
     }
   }
 
