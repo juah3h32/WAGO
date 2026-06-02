@@ -349,13 +349,14 @@ export class ConnectionsController {
         if (wahaStatus === 'CONNECTING' || wahaStatus === 'PAIRING') {
           return { connecting: true };
         }
-        throw err;
+        // SCAN_QR_CODE but QR temporarily unavailable (instance just recreated, still starting up)
+        // Return 503 gracefully so the client keeps polling without showing a hard error
+        throw new ServiceUnavailableException('QR not ready yet, please wait');
       }
     }
 
-    // STOPPED or null: instance may have been removed by WhatsApp (device_removed).
-    // Try to get the QR anyway in case Evolution API has a fresh instance connecting.
-    if (wahaStatus === 'STOPPED' || !wahaStatus) {
+    // STOPPED, FAILED, or null: instance may just have been (re)created — try QR optimistically.
+    if (wahaStatus === 'STOPPED' || wahaStatus === 'FAILED' || !wahaStatus) {
       try {
         const qr = await this.wahaService.getQrCode(worker.internalIp, worker.apiKeyEnc, wahaName);
         return qr;
@@ -441,17 +442,42 @@ export class ConnectionsController {
     this.enforceConnectionScope(user, id);
 
     const worker = await this.workersService.getWorkerForSession(id);
-    if (!worker) throw new ServiceUnavailableException('No worker assigned');
+
+    // If no worker is assigned, re-trigger full setup from scratch instead of failing
+    if (!worker) {
+      await this.db.update(wahaSessions).set({ status: 'pending', updatedAt: new Date() }).where(eq(wahaSessions.id, id));
+      this.setupWorkerAndSession(connection.id, connection.sessionName).catch((err) => {
+        this.logger.error(`Reconnect setup failed for ${connection.id}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+      const [pending] = await this.db.select().from(wahaSessions).where(eq(wahaSessions.id, id));
+      return this.mapConnection(pending);
+    }
 
     const wahaName = this.wahaService.resolveSessionName(connection.sessionName);
     const apiUrl = this.configService.get<string>('API_URL', 'http://localhost:3001');
     const webhookUrl = `${apiUrl}/api/events/waha?workerId=${worker.id}&secret=${worker.ingressSecret}`;
 
     // Force full reset: stop → logout → delete → recreate, regardless of WAHA status.
-    // Use this when the session appears WORKING but is actually stuck.
-    await this.wahaService.resetSession(
-      worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl, true,
-    );
+    // Retry once with a longer delay if the first attempt fails (Evolution API cleanup race).
+    try {
+      await this.wahaService.resetSession(
+        worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl, true,
+      );
+    } catch (firstErr) {
+      this.logger.warn(`resetSession failed on first attempt for ${id}, retrying in 2s: ${firstErr instanceof Error ? firstErr.message : String(firstErr)}`);
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        await this.wahaService.resetSession(
+          worker.internalIp, worker.apiKeyEnc, wahaName, webhookUrl, true,
+        );
+      } catch (secondErr) {
+        // Both attempts failed — mark as failed so the UI shows the error state
+        await this.db.update(wahaSessions).set({ status: 'failed', updatedAt: new Date() }).where(eq(wahaSessions.id, id));
+        throw new ServiceUnavailableException(
+          `No se pudo reconectar: ${secondErr instanceof Error ? secondErr.message : 'Error interno'}`,
+        );
+      }
+    }
 
     // Reset warmup so the reconnected number starts fresh
     this.antiSpamService.resetWarmup(id);

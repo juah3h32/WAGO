@@ -505,6 +505,9 @@ function ConnectionDetailPageContent() {
                       {restarting ? "Reiniciando…" : "Reintentar"}
                     </button>
                   )}
+                  {qrError && setupSeconds >= 20 && (
+                    <p className="text-xs text-status-error-text text-center px-3">{qrError}</p>
+                  )}
                 </div>
               )}
             </div>

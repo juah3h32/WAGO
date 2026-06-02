@@ -119,6 +119,8 @@ export class WahaService {
 
     try { await this.logoutSession(workerUrl, apiKey, sessionName); } catch { /* ignore */ }
     try { await this.deleteSession(workerUrl, apiKey, sessionName); } catch { /* ignore */ }
+    // Brief pause so Evolution API finishes cleaning up before we recreate the instance
+    await new Promise((r) => setTimeout(r, 800));
     await this.createSession(workerUrl, apiKey, sessionName, webhookUrl);
   }
 
@@ -289,9 +291,15 @@ export class WahaService {
 
   async getChats(workerUrl: string, apiKey: string, sessionName: string): Promise<WahaChatResponse[]> {
     const headers = this.buildHeaders(apiKey);
-    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findChats/${sessionName}`), headers, {});
+    const result = await this.request<any>('POST', this.buildUrl(workerUrl, `/chat/findChats/${sessionName}`), headers, { limit: 100 });
     const chats = Array.isArray(result) ? result : (result?.chats ?? []);
-    return chats.slice(0, 20).map((c: any) => ({
+    // Sort by most-recently-updated descending before returning
+    const sorted = [...chats].sort((a: any, b: any) => {
+      const ta = a.updatedAt ? Math.floor(new Date(a.updatedAt).getTime() / 1000) : (a.conversationTimestamp ?? 0);
+      const tb = b.updatedAt ? Math.floor(new Date(b.updatedAt).getTime() / 1000) : (b.conversationTimestamp ?? 0);
+      return tb - ta;
+    });
+    return sorted.slice(0, 100).map((c: any) => ({
       id: c.id ?? c.remoteJid ?? '',
       name: c.name ?? c.pushName ?? undefined,
       timestamp: c.updatedAt ? Math.floor(new Date(c.updatedAt).getTime() / 1000) : (c.conversationTimestamp ?? 0),
