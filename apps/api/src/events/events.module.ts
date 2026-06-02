@@ -40,6 +40,9 @@ import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
         removeOnFail: 1000, // keep last 1000 failed (DLQ-like)
       },
     }),
+    BullModule.registerQueue({
+      name: 'ai-response',
+    }),
   ],
   controllers: [EventsController],
   providers: [WebhookDeliveryProcessor, EventsGateway],

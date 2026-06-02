@@ -13,6 +13,7 @@ import { HealthModule } from "./health/health.module";
 import { WebhooksModule } from "./webhooks/webhooks.module";
 import { EventsModule } from "./events/events.module";
 import { QueueModule } from "./queue/queue.module";
+import { AiResponderModule } from "./ai-responder/ai-responder.module";
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { QueueModule } from "./queue/queue.module";
     WebhooksModule,
     EventsModule,
     QueueModule,
+    AiResponderModule,
   ],
   controllers: [AppController],
   providers: [

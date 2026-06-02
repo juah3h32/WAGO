@@ -35,16 +35,19 @@ describe('EventsController', () => {
   let controller: EventsController;
   let db: ReturnType<typeof createMockDb>;
   let webhookQueue: { add: jest.Mock };
+  let aiResponseQueue: { add: jest.Mock };
 
   beforeEach(async () => {
     db = createMockDb();
     webhookQueue = { add: jest.fn().mockResolvedValue({}) };
+    aiResponseQueue = { add: jest.fn().mockResolvedValue({}) };
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [EventsController],
       providers: [
         { provide: DRIZZLE_TOKEN, useValue: db },
         { provide: getQueueToken('webhook-delivery'), useValue: webhookQueue },
+        { provide: getQueueToken('ai-response'), useValue: aiResponseQueue },
         { provide: WahaService, useValue: { getMaxSessions: jest.fn().mockReturnValue(2) } },
         { provide: EventsGateway, useValue: { broadcastEvent: jest.fn() } },
         { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue('http://localhost:3001') } },

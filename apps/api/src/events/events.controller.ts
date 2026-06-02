@@ -10,6 +10,8 @@ import { DRIZZLE_TOKEN } from '../database/database.module';
 import { WahaService } from '../waha/waha.service';
 import { EventsGateway } from './events.gateway';
 
+const AI_RESPONSE_QUEUE = 'ai-response';
+
 interface WahaEvent {
   event: string;
   session: string;
@@ -24,6 +26,7 @@ export class EventsController {
   constructor(
     @Inject(DRIZZLE_TOKEN) private readonly db: any,
     @InjectQueue('webhook-delivery') private readonly webhookQueue: Queue,
+    @InjectQueue(AI_RESPONSE_QUEUE) private readonly aiResponseQueue: Queue,
     private readonly wahaService: WahaService,
     private readonly eventsGateway: EventsGateway,
     private readonly configService: ConfigService,
@@ -100,6 +103,42 @@ export class EventsController {
         `No session found for sessionName: ${event.session}, ignoring event`,
       );
       return { received: true };
+    }
+
+    // 1b. If this is an incoming text message, enqueue an AI auto-response job (fire-and-forget)
+    if (
+      (event.event === 'messages.upsert' || event.event === 'message') &&
+      (event.payload as any)?.key?.fromMe === false &&
+      (event.payload as any)?.message
+    ) {
+      const msgPayload = event.payload as any;
+      const chatId: string | undefined = msgPayload?.key?.remoteJid;
+      const text: string | undefined =
+        msgPayload?.message?.conversation ||
+        msgPayload?.message?.extendedTextMessage?.text;
+
+      if (chatId && text) {
+        this.aiResponseQueue
+          .add(
+            'respond',
+            {
+              connectionId: session.id,
+              sessionId: session.id,
+              userId: session.userId,
+              chatId,
+              incomingMessage: text,
+              workerInternalIp: worker?.internalIp ?? undefined,
+              workerApiKey: worker?.apiKeyEnc ?? undefined,
+              sessionName: session.sessionName,
+            },
+            { attempts: 2, backoff: { type: 'fixed', delay: 5000 } },
+          )
+          .catch((err: unknown) => {
+            this.logger.warn(
+              `Failed to enqueue AI response job: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
+      }
     }
 
     // 2. Normalize Evolution API media payloads.

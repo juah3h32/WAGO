@@ -340,7 +340,7 @@ function ConnectionDetailModal({
   const [restarting, setRestarting] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [activeTab, setActiveTab] = useState<"credentials" | "webhooks">("credentials");
+  const [activeTab, setActiveTab] = useState<"credentials" | "webhooks" | "ai">("credentials");
 
   // Token state
   const [tokens, setTokens] = useState<ApiToken[]>([]);
@@ -589,11 +589,11 @@ function ConnectionDetailModal({
 
               {/* Tabs */}
               <div className="flex border-b border-border-primary gap-1">
-                {(["credentials", "webhooks"] as const).map((tab) => (
+                {(["credentials", "webhooks", "ai"] as const).map((tab) => (
                   <button key={tab} onClick={() => setActiveTab(tab)}
                     className={`px-4 py-2 text-sm font-semibold transition-all border-b-2 -mb-px
                       ${activeTab === tab ? "border-wa-green text-wa-green" : "border-transparent text-text-tertiary hover:text-text-secondary"}`}>
-                    {tab === "credentials" ? "🔑 Credenciales" : "🔗 Webhooks"}
+                    {tab === "credentials" ? "🔑 Credenciales" : tab === "webhooks" ? "🔗 Webhooks" : "🤖 IA"}
                   </button>
                 ))}
               </div>
@@ -673,6 +673,8 @@ function ConnectionDetailModal({
               )}
 
               {activeTab === "webhooks" && <WebhookList connectionId={conn.id} />}
+
+              {activeTab === "ai" && <AiResponderTab connectionId={conn.id} />}
             </div>
           )}
 
@@ -713,5 +715,225 @@ function ActionBtn({ icon, label, onClick, disabled, color }: {
       {icon}
       <span className="text-[10px] font-semibold leading-tight">{label}</span>
     </button>
+  );
+}
+
+// ─── AI Responder Tab ─────────────────────────────────────────────────────────
+interface AiResponderConfig {
+  enabled: boolean;
+  provider: string;
+  model: string;
+  apiKey: string | null;
+  apiKeySet?: boolean;
+  systemPrompt: string | null;
+  maxTokens: number;
+}
+
+function AiResponderTab({ connectionId }: { connectionId: string }) {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; response?: string; error?: string } | null>(null);
+  const [config, setConfig] = useState<AiResponderConfig>({
+    enabled: false,
+    provider: "anthropic",
+    model: "claude-haiku-4-5-20251001",
+    apiKey: null,
+    systemPrompt: null,
+    maxTokens: 500,
+  });
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeySet, setApiKeySet] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    apiFetch(`/api/connections/${connectionId}/ai-responder`)
+      .then((data: AiResponderConfig) => {
+        if (!alive) return;
+        setConfig(data);
+        setApiKeySet(!!data.apiKeySet);
+      })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [connectionId]);
+
+  async function handleSave() {
+    setSaving(true);
+    setTestResult(null);
+    try {
+      const body: Partial<AiResponderConfig> & { apiKey?: string } = {
+        enabled: config.enabled,
+        provider: config.provider,
+        model: config.model,
+        systemPrompt: config.systemPrompt,
+        maxTokens: config.maxTokens,
+      };
+      // Only send apiKey if the user typed a new one
+      if (apiKeyInput.trim()) {
+        body.apiKey = apiKeyInput.trim();
+      }
+      const updated = await apiFetch(`/api/connections/${connectionId}/ai-responder`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+      setConfig(updated);
+      setApiKeySet(!!updated.apiKeySet);
+      setApiKeyInput("");
+      toast("Configuración guardada", "success");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Error al guardar", "error");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleTest() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const result = await apiFetch(`/api/connections/${connectionId}/ai-responder/test`, {
+        method: "POST",
+      });
+      setTestResult(result);
+    } catch (err) {
+      setTestResult({ success: false, error: err instanceof Error ? err.message : "Error" });
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  if (loading) {
+    return <p className="text-sm text-text-tertiary py-4">Cargando configuración…</p>;
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Enable toggle */}
+      <div className="flex items-center justify-between rounded-xl border border-border-primary bg-bg-elevated px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-text-primary">Auto-responder IA</p>
+          <p className="text-xs text-text-tertiary mt-0.5">Responde automáticamente los mensajes entrantes</p>
+        </div>
+        <button
+          onClick={() => setConfig((c) => ({ ...c, enabled: !c.enabled }))}
+          className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${config.enabled ? "bg-wa-green" : "bg-border-secondary"}`}>
+          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${config.enabled ? "translate-x-6" : "translate-x-1"}`} />
+        </button>
+      </div>
+
+      {/* Provider */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Proveedor</label>
+        <select
+          value={config.provider}
+          onChange={(e) => {
+            const p = e.target.value;
+            setConfig((c) => ({
+              ...c,
+              provider: p,
+              model: p === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001",
+            }));
+          }}
+          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all">
+          <option value="anthropic">Anthropic (Claude)</option>
+          <option value="openai">OpenAI</option>
+        </select>
+      </div>
+
+      {/* Model */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Modelo</label>
+        <input
+          type="text"
+          value={config.model}
+          onChange={(e) => setConfig((c) => ({ ...c, model: e.target.value }))}
+          placeholder={config.provider === "openai" ? "gpt-4o-mini" : "claude-haiku-4-5-20251001"}
+          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all" />
+      </div>
+
+      {/* API Key */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+          API Key {apiKeySet && <span className="text-wa-green font-normal normal-case">(configurada)</span>}
+        </label>
+        <input
+          type="password"
+          value={apiKeyInput}
+          onChange={(e) => setApiKeyInput(e.target.value)}
+          placeholder={apiKeySet ? "Dejar vacío para mantener la clave actual" : config.provider === "openai" ? "sk-..." : "sk-ant-..."}
+          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all" />
+      </div>
+
+      {/* System Prompt */}
+      <div className="space-y-1.5">
+        <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Prompt del sistema</label>
+        <textarea
+          value={config.systemPrompt ?? ""}
+          onChange={(e) => setConfig((c) => ({ ...c, systemPrompt: e.target.value || null }))}
+          rows={5}
+          placeholder="Eres un asistente de ventas. Responde de forma amigable y concisa en el idioma del cliente..."
+          className="block w-full rounded-xl border border-border-secondary bg-bg-input px-4 py-2.5 text-sm text-text-primary placeholder:text-text-tertiary focus:border-wa-green focus:outline-none focus:ring-2 focus:ring-wa-green/20 transition-all resize-none" />
+      </div>
+
+      {/* Max Tokens */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold text-text-secondary uppercase tracking-wider">Tokens máximos</label>
+          <span className="text-xs font-mono text-wa-green">{config.maxTokens}</span>
+        </div>
+        <input
+          type="range"
+          min={100}
+          max={2000}
+          step={50}
+          value={config.maxTokens}
+          onChange={(e) => setConfig((c) => ({ ...c, maxTokens: Number(e.target.value) }))}
+          className="w-full accent-wa-green" />
+        <div className="flex justify-between text-[10px] text-text-tertiary">
+          <span>100</span>
+          <span>2000</span>
+        </div>
+      </div>
+
+      {/* Test result */}
+      {testResult && (
+        <div className={`rounded-xl border px-4 py-3 ${testResult.success ? "border-status-success-border bg-status-success-bg" : "border-status-error-border bg-status-error-bg"}`}>
+          {testResult.success ? (
+            <>
+              <p className="text-xs font-semibold text-status-success-text mb-1">Prueba exitosa</p>
+              <p className="text-xs text-status-success-text/80 break-words">{testResult.response}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-semibold text-status-error-text mb-1">Error en la prueba</p>
+              <p className="text-xs text-status-error-text/80 break-words">{testResult.error}</p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Action buttons */}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex-1 rounded-xl bg-wa-green py-2.5 text-sm font-bold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+          {saving ? (
+            <><svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Guardando…</>
+          ) : "Guardar"}
+        </button>
+        <button
+          onClick={handleTest}
+          disabled={testing || !apiKeySet}
+          title={!apiKeySet ? "Guardá una API key primero" : "Enviar mensaje de prueba"}
+          className="flex-1 rounded-xl border border-border-secondary py-2.5 text-sm font-bold text-text-secondary hover:bg-bg-elevated hover:text-text-primary transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+          {testing ? (
+            <><svg className="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Probando…</>
+          ) : "Probar API"}
+        </button>
+      </div>
+    </div>
   );
 }
