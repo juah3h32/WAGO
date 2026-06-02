@@ -658,7 +658,7 @@ function ConnectionDetailModal({
                       <div className="relative px-4 py-3 font-mono text-xs leading-relaxed">
                         {[
                           { k: "WAGO_URL", v: apiUrl },
-                          { k: "WAGO_TOKEN", v: activeToken ? activeToken.tokenPrefix.replace("...", "<token-completo>") : "<genera-un-token>" },
+                          { k: "WAGO_TOKEN", v: newTokenValue || (activeToken ? activeToken.tokenPrefix + "[ver token completo arriba]" : "<genera-un-token>") },
                           { k: "WAGO_CONNECTION_ID", v: conn.id },
                         ].map(({ k, v }) => (
                           <div key={k}>
@@ -671,7 +671,7 @@ function ConnectionDetailModal({
                       <div className="border-t border-border-primary px-4 py-2 flex justify-end">
                         <CopyButton text={[
                           `WAGO_URL=${apiUrl}`,
-                          `WAGO_TOKEN=${activeToken ? activeToken.tokenPrefix.replace("...", "<token-completo>") : "<genera-un-token>"}`,
+                          `WAGO_TOKEN=${newTokenValue || "<revoca-y-genera-token-nuevo>"}`,
                           `WAGO_CONNECTION_ID=${conn.id}`,
                         ].join("\n")} />
                       </div>
@@ -684,6 +684,7 @@ function ConnectionDetailModal({
                     apiUrl={apiUrl}
                     activeToken={activeToken}
                     onCreateToken={handleCreateToken}
+                    onRevokeToken={handleRevokeToken}
                     creatingToken={creatingToken}
                     newTokenValue={newTokenValue}
                   />
@@ -718,22 +719,30 @@ function ConnectionDetailModal({
 }
 
 // ─── Integration Key Section ──────────────────────────────────────────────────
-function IntegrationKeySection({ connectionId, apiUrl, activeToken, onCreateToken, creatingToken, newTokenValue }: {
+function IntegrationKeySection({ connectionId, apiUrl, activeToken, onCreateToken, onRevokeToken, creatingToken, newTokenValue }: {
   connectionId: string; apiUrl: string;
-  activeToken: any; onCreateToken: () => void; creatingToken: boolean; newTokenValue: string | null;
+  activeToken: any; onCreateToken: () => void; onRevokeToken: (id: string) => void;
+  creatingToken: boolean; newTokenValue: string | null;
 }) {
   const { toast } = useToast();
   const [integrationKey, setIntegrationKey] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [revoking, setRevoking] = useState(false);
   const [webhookUrl, setWebhookUrl] = useState("https://grupo-ortiz.com/api/webhook/whatsapp");
 
-  // Token completo: solo disponible justo después de crear, o el del env (wh_...)
-  const fullToken = newTokenValue; // solo si acaba de crearse
+  const fullToken = newTokenValue;
+
+  async function handleRevokeAndCreate() {
+    setRevoking(true);
+    try {
+      if (activeToken) await onRevokeToken(activeToken.id);
+      await onCreateToken();
+    } finally { setRevoking(false); }
+  }
 
   async function handleGenerate() {
     if (!fullToken) {
-      toast("Revocá el token actual y generá uno nuevo — la clave necesita el token completo", "error");
-      return;
+      toast("Revocá el token y generá uno nuevo primero", "error"); return;
     }
     if (!webhookUrl.startsWith("http")) {
       toast("URL inválida", "error"); return;
@@ -768,15 +777,17 @@ function IntegrationKeySection({ connectionId, apiUrl, activeToken, onCreateToke
       </div>
 
       {!fullToken ? (
-        <div className="px-4 py-3 space-y-2">
-          <p className="text-[10px] text-amber-400">Para generar la clave necesitás el token completo.</p>
-          <p className="text-[10px] text-text-tertiary">1. Revocá el token actual (si existe)  2. Generá uno nuevo  3. Volvé aquí antes de cerrar el modal</p>
-          {!activeToken && (
-            <button onClick={onCreateToken} disabled={creatingToken}
-              className="rounded-lg bg-wa-green px-3 py-1.5 text-xs font-semibold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50">
-              {creatingToken ? "Generando…" : "Generar token ahora"}
-            </button>
-          )}
+        <div className="px-4 py-3 space-y-3">
+          <p className="text-[10px] text-amber-400 font-semibold">Para generar la clave necesitás el token completo.</p>
+          <p className="text-[10px] text-text-tertiary">El token completo solo es visible al crearlo. Revocar el actual y generar uno nuevo lo muestra.</p>
+          <button
+            onClick={handleRevokeAndCreate}
+            disabled={revoking || creatingToken}
+            className="w-full rounded-lg bg-wa-green py-2 text-xs font-semibold text-text-inverse hover:bg-wa-green-dark transition-all disabled:opacity-50">
+            {revoking || creatingToken
+              ? "Generando…"
+              : activeToken ? "Revocar token y generar nuevo" : "Generar token"}
+          </button>
         </div>
       ) : !integrationKey ? (
         <div className="px-4 py-3 space-y-3">
