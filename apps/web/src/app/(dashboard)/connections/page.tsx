@@ -491,10 +491,8 @@ function ConnectionDetailModal({
   const label = conn.name || (conn.phoneNumber ? `+${conn.phoneNumber}` : "Conexión");
   const activeToken = tokens.find(t => t.active);
 
-  const apiUrl = typeof window !== "undefined"
-    ? (window.location.hostname.includes("recursomusical.com.mx")
-        ? "https://api.recursomusical.com.mx" : "http://localhost:3001")
-    : "https://api.recursomusical.com.mx";
+  const apiUrl = (typeof window !== "undefined" && (window as any).__API_URL__)
+    || "https://api.recursomusical.com.mx";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 backdrop-blur-sm p-4"

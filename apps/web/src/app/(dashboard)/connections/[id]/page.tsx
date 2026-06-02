@@ -460,11 +460,8 @@ function CredentialsTab({
   newTokenValue: string | null; creatingToken: boolean;
   onCreateToken: () => void; onRevokeToken: (id: string) => void; onDismissToken: () => void;
 }) {
-  const apiUrl = typeof window !== "undefined"
-    ? (window.location.hostname.includes("recursomusical.com.mx")
-        ? "https://api.recursomusical.com.mx"
-        : "http://localhost:3001")
-    : "https://api.recursomusical.com.mx";
+  const apiUrl = (typeof window !== "undefined" && (window as any).__API_URL__)
+    || "https://api.recursomusical.com.mx";
 
   const activeToken = tokens.find(t => t.active);
 
