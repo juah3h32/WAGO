@@ -82,6 +82,7 @@ function ConnectionDetailPageContent() {
   const [wahaConnecting, setWahaConnecting] = useState(false); // QR scanned, transitioning
   const [chats, setChats] = useState<ChatItem[]>([]);
   const [chatsLoading, setChatsLoading] = useState(false);
+  const [chatsSyncing, setChatsSyncing] = useState(false); // true while waiting for initial WhatsApp history sync
   const [profile, setProfile] = useState<WaProfile | null>(null);
   const [selectedChat, setSelectedChat] = useState<ChatItem | null>(null);
   const [messages, setMessages] = useState<any[]>([]);
@@ -121,10 +122,12 @@ function ConnectionDetailPageContent() {
       if (me) setProfile(me);
       const list = chatsData ?? [];
       setChats(list);
-      // Only mark as loaded when WAHA returned actual chats.
-      // If empty (still syncing), keep chatsLoadedRef=false so the loop retries.
       if (list.length > 0 || force) {
         chatsLoadedRef.current = true;
+        setChatsSyncing(false);
+      } else {
+        // Still empty — WhatsApp history sync in progress
+        setChatsSyncing(true);
       }
     } finally {
       if (!cancelled.v) setChatsLoading(false);
@@ -269,7 +272,7 @@ function ConnectionDetailPageContent() {
     prevStatusRef.current = null;
     chatsLoadedRef.current = false;
     mutateConn((p: Connection | null) => p ? { ...p, status: "scan_qr" } : p);
-    setChats([]); setProfile(null); setSelectedChat(null); setQr(null); setWahaConnecting(false);
+    setChats([]); setProfile(null); setSelectedChat(null); setQr(null); setWahaConnecting(false); setChatsSyncing(false);
     try {
       await apiFetch(`/api/connections/${id}/reconnect`, { method: "POST" });
     } catch (err) {
@@ -297,7 +300,7 @@ function ConnectionDetailPageContent() {
     prevStatusRef.current = null;
     chatsLoadedRef.current = false;
     mutateConn((p: Connection | null) => p ? { ...p, status: "scan_qr" } : p);
-    setChats([]); setProfile(null); setSelectedChat(null); setQr(null);
+    setChats([]); setProfile(null); setSelectedChat(null); setQr(null); setChatsSyncing(false);
     try {
       await apiFetch(`/api/connections/${id}/restart`, { method: "POST" });
       await fetchConn();
@@ -579,8 +582,22 @@ function ConnectionDetailPageContent() {
                         <p className="text-xs text-text-tertiary">Cargando chats…</p>
                       </div>
                     ) : chats.length === 0 ? (
-                      <div className="flex h-full items-center justify-center p-6 text-center">
-                        <p className="text-xs text-text-tertiary">No hay chats disponibles</p>
+                      <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                        {chatsSyncing ? (
+                          <>
+                            <svg className="h-5 w-5 animate-spin text-wa-green" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+                              <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                            </svg>
+                            <p className="text-xs text-text-tertiary">Sincronizando historial…</p>
+                            <p className="text-[10px] text-text-tertiary/60 px-2">WhatsApp está cargando tus conversaciones. Puede tardar hasta 60s.</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-xs text-text-tertiary">No hay chats disponibles</p>
+                            <p className="text-[10px] text-text-tertiary/60 px-2">Hacé clic en <strong>Reconectar</strong> para sincronizar el historial de WhatsApp.</p>
+                          </>
+                        )}
                       </div>
                     ) : chats.map((chat) => {
                       const isSelected = selectedChat?.id === chat.id;
