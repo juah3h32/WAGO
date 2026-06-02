@@ -30,7 +30,11 @@ const EVENT_TYPES = [
   "session.status",
 ];
 
-export function WebhookList({ connectionId }: { connectionId: string }) {
+export function WebhookList({ connectionId, apiUrl, activeTokenValue }: {
+  connectionId: string;
+  apiUrl?: string;
+  activeTokenValue?: string | null;
+}) {
   const { toast } = useToast();
   const { confirm } = useConfirm();
   const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
@@ -250,30 +254,61 @@ export function WebhookList({ connectionId }: { connectionId: string }) {
         </div>
       )}
 
-      {/* Signing secret — solo visible una vez al crear */}
-      {newWebhookSecret && (
-        <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-          <p className="text-xs font-semibold text-amber-400 mb-1">Signing Secret — copialo ahora, no se vuelve a mostrar completo</p>
-          <p className="text-xs text-amber-300/70 mb-2">
-            Pegalo en <code className="bg-bg-elevated px-1 rounded">WAGO_WEBHOOK_SECRET</code> en el <code className="bg-bg-elevated px-1 rounded">.env</code> de GO2026
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 break-all text-xs font-mono text-text-primary bg-bg-elevated rounded-lg px-3 py-2 border border-border-secondary">
-              {newWebhookSecret.secret}
-            </code>
-            <button
-              onClick={() => { navigator.clipboard.writeText(newWebhookSecret.secret); toast("Copiado", "success"); }}
-              className="shrink-0 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all">
-              <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>
-              </svg>
-            </button>
+      {/* Signing secret + clave de integración — solo visible una vez al crear */}
+      {newWebhookSecret && (() => {
+        const integrationKey = activeTokenValue
+          ? "wago_v1_" + encodeURIComponent(JSON.stringify({
+              url: apiUrl || "https://api.recursomusical.com.mx",
+              token: activeTokenValue,
+              connectionId,
+              webhookSecret: newWebhookSecret.secret,
+            }))
+          : null;
+        return (
+          <div className="mt-4 space-y-3">
+            {/* Clave de integración GO2026 — lo más importante */}
+            {integrationKey && (
+              <div className="rounded-xl border border-wa-green/30 bg-wa-green/5 px-4 py-3">
+                <p className="text-xs font-semibold text-wa-green mb-1">Clave de integración GO2026 — copiala ahora</p>
+                <p className="text-[10px] text-wa-green/70 mb-2">
+                  Admin GO2026 → WhatsApp → <strong>Conectar WAGO</strong> → pegar esta clave
+                </p>
+                <div className="flex items-start gap-2">
+                  <code className="flex-1 break-all text-[10px] font-mono text-text-primary bg-bg-elevated rounded-lg px-3 py-2 border border-border-secondary leading-relaxed">
+                    {integrationKey}
+                  </code>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(integrationKey); toast("Clave copiada", "success"); }}
+                    className="shrink-0 mt-0.5 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all">
+                    <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* Signing secret por separado */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+              <p className="text-xs font-semibold text-amber-400 mb-1">Signing Secret — solo para .env manual</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 break-all text-xs font-mono text-text-primary bg-bg-elevated rounded-lg px-3 py-2 border border-border-secondary">
+                  {newWebhookSecret.secret}
+                </code>
+                <button
+                  onClick={() => { navigator.clipboard.writeText(newWebhookSecret.secret); toast("Copiado", "success"); }}
+                  className="shrink-0 rounded-lg border border-border-secondary bg-bg-secondary p-2 hover:bg-bg-hover transition-all">
+                  <svg className="h-4 w-4 text-text-secondary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"/>
+                  </svg>
+                </button>
+              </div>
+              <button onClick={() => setNewWebhookSecret(null)} className="mt-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors">
+                Ya lo guardé ✓
+              </button>
+            </div>
           </div>
-          <button onClick={() => setNewWebhookSecret(null)} className="mt-2 text-xs text-amber-400/70 hover:text-amber-400 transition-colors">
-            Ya lo guardé ✓
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Add Webhook Form */}
       {showForm && (

@@ -408,7 +408,7 @@ function ConnectionDetailPageContent() {
               onDismissToken={() => setNewTokenValue(null)}
             />
           )}
-          {activeTab === "webhooks" && <WebhookList connectionId={id}/>}
+          {activeTab === "webhooks" && <WebhookList connectionId={id} apiUrl={typeof window !== "undefined" ? ((window as any).__API_URL__ || "https://api.recursomusical.com.mx") : "https://api.recursomusical.com.mx"} activeTokenValue={newTokenValue} />}
         </>
       )}
 

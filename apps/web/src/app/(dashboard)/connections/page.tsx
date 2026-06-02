@@ -690,7 +690,7 @@ function ConnectionDetailModal({
                 </div>
               )}
 
-              {activeTab === "webhooks" && <WebhookList connectionId={conn.id} />}
+              {activeTab === "webhooks" && <WebhookList connectionId={conn.id} apiUrl={apiUrl} activeTokenValue={newTokenValue} />}
 
               {activeTab === "ai" && <AiResponderTab connectionId={conn.id} />}
             </div>
