@@ -17,6 +17,8 @@ import { CurrentUser } from '../auth/user.decorator';
 import { DRIZZLE_TOKEN } from '../database/database.module';
 import { AiResponderService, UpsertAiResponderDto } from './ai-responder.service';
 
+const MASKED = '••••••••';
+
 @Controller('connections/:connectionId/ai-responder')
 @UseGuards(AuthGuard)
 export class AiResponderController {
@@ -40,66 +42,56 @@ export class AiResponderController {
       )
       .limit(1);
 
-    if (!sessions[0]) {
-      throw new NotFoundException('Connection not found');
-    }
+    if (!sessions[0]) throw new NotFoundException('Connection not found');
     return sessions[0];
+  }
+
+  /** Never expose the raw API key — only tell the client whether one is set. */
+  private sanitize(config: any) {
+    const { apiKey, ...rest } = config;
+    return { ...rest, apiKeySet: !!apiKey, apiKey: apiKey ? MASKED : null };
   }
 
   @Get()
   async getConfig(
     @Param('connectionId') connectionId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { sub: string },
   ) {
-    await this.assertConnectionOwnership(connectionId, user.id);
-    const config = await this.aiResponderService.getConfig(connectionId, user.id);
-    // Return empty default if not yet configured
+    await this.assertConnectionOwnership(connectionId, user.sub);
+    const config = await this.aiResponderService.getConfig(connectionId, user.sub);
     if (!config) {
       return {
-        connectionId,
-        enabled: false,
-        provider: 'anthropic',
-        model: 'claude-haiku-4-5-20251001',
-        apiKey: null,
-        systemPrompt: null,
-        maxTokens: 500,
+        connectionId, enabled: false, provider: 'anthropic',
+        model: 'claude-haiku-4-5-20251001', apiKey: null,
+        apiKeySet: false, systemPrompt: null, maxTokens: 500,
       };
     }
-    // Mask the API key for security — only return whether it's set
-    return {
-      ...config,
-      apiKey: config.apiKey ? '••••••••' : null,
-      apiKeySet: !!config.apiKey,
-    };
+    return this.sanitize(config);
   }
 
   @Put()
   async upsertConfig(
     @Param('connectionId') connectionId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { sub: string },
     @Body() dto: UpsertAiResponderDto,
   ) {
-    await this.assertConnectionOwnership(connectionId, user.id);
+    await this.assertConnectionOwnership(connectionId, user.sub);
 
-    // If apiKey is the masked placeholder, don't overwrite
-    if (dto.apiKey === '••••••••') {
+    // If frontend sent the masked placeholder, keep the existing key
+    if (dto.apiKey === MASKED || dto.apiKey === '') {
       delete dto.apiKey;
     }
 
-    const config = await this.aiResponderService.upsertConfig(connectionId, user.id, dto);
-    return {
-      ...config,
-      apiKey: config.apiKey ? '••••••••' : null,
-      apiKeySet: !!config.apiKey,
-    };
+    const config = await this.aiResponderService.upsertConfig(connectionId, user.sub, dto);
+    return this.sanitize(config);
   }
 
   @Post('test')
   async testConfig(
     @Param('connectionId') connectionId: string,
-    @CurrentUser() user: { id: string },
+    @CurrentUser() user: { sub: string },
   ) {
-    await this.assertConnectionOwnership(connectionId, user.id);
-    return this.aiResponderService.testConfig(connectionId, user.id);
+    await this.assertConnectionOwnership(connectionId, user.sub);
+    return this.aiResponderService.testConfig(connectionId, user.sub);
   }
 }

@@ -127,9 +127,7 @@ export class EventsController {
               userId: session.userId,
               chatId,
               incomingMessage: text,
-              workerInternalIp: worker?.internalIp ?? undefined,
-              workerApiKey: worker?.apiKeyEnc ?? undefined,
-              sessionName: session.sessionName,
+              // Worker IP and API key are resolved from DB inside the processor — never stored in queue
             },
             { attempts: 2, backoff: { type: 'fixed', delay: 5000 } },
           )

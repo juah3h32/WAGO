@@ -5,6 +5,19 @@ import { DRIZZLE_TOKEN } from '../database/database.module';
 import { WahaService } from '../waha/waha.service';
 import { AntiSpamService } from '../waha/anti-spam.service';
 
+const ALLOWED_PROVIDERS = ['anthropic', 'openai'] as const;
+type Provider = typeof ALLOWED_PROVIDERS[number];
+
+const ALLOWED_MODELS: Record<Provider, string[]> = {
+  anthropic: [
+    'claude-haiku-4-5-20251001',
+    'claude-sonnet-4-5-20251022',
+    'claude-opus-4-5',
+    'claude-haiku-3-5-20241022',
+  ],
+  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+};
+
 export interface UpsertAiResponderDto {
   enabled?: boolean;
   provider?: string;
@@ -14,15 +27,12 @@ export interface UpsertAiResponderDto {
   maxTokens?: number;
 }
 
+// Only minimal identifiers go into the queue — never secrets or IPs
 export interface AiResponderJobData {
   connectionId: string;
-  sessionId: string;
   userId: string;
   chatId: string;
   incomingMessage: string;
-  workerInternalIp?: string;
-  workerApiKey?: string;
-  sessionName?: string;
 }
 
 @Injectable()
@@ -50,15 +60,33 @@ export class AiResponderService {
   }
 
   async upsertConfig(connectionId: string, userId: string, dto: UpsertAiResponderDto) {
+    // Validate + sanitize inputs before touching the DB
+    const provider = (ALLOWED_PROVIDERS as readonly string[]).includes(dto.provider ?? '')
+      ? (dto.provider as Provider)
+      : 'anthropic';
+
+    const allowedModels = ALLOWED_MODELS[provider];
+    const model = allowedModels.includes(dto.model ?? '')
+      ? dto.model!
+      : allowedModels[0];
+
+    const maxTokens = Math.min(Math.max(Math.floor(dto.maxTokens ?? 500), 100), 4096);
+
+    const safeDto = {
+      enabled: dto.enabled,
+      provider,
+      model,
+      maxTokens,
+      ...(dto.apiKey !== undefined && { apiKey: dto.apiKey }),
+      ...(dto.systemPrompt !== undefined && { systemPrompt: dto.systemPrompt }),
+    };
+
     const existing = await this.getConfig(connectionId, userId);
 
     if (existing) {
       const [updated] = await this.db
         .update(aiResponderConfigs)
-        .set({
-          ...dto,
-          updatedAt: new Date(),
-        })
+        .set({ ...safeDto, updatedAt: new Date() })
         .where(eq(aiResponderConfigs.id, existing.id))
         .returning();
       return updated;
@@ -69,12 +97,12 @@ export class AiResponderService {
       .values({
         connectionId,
         userId,
-        enabled: dto.enabled ?? false,
-        provider: dto.provider ?? 'anthropic',
-        model: dto.model ?? 'claude-haiku-4-5-20251001',
-        apiKey: dto.apiKey ?? null,
-        systemPrompt: dto.systemPrompt ?? null,
-        maxTokens: dto.maxTokens ?? 500,
+        enabled: safeDto.enabled ?? false,
+        provider,
+        model,
+        apiKey: safeDto.apiKey ?? null,
+        systemPrompt: safeDto.systemPrompt ?? null,
+        maxTokens,
       })
       .returning();
     return created;
@@ -94,13 +122,15 @@ export class AiResponderService {
       const response = await this.callAiApi(config, testMessages);
       return { success: true, response };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return { success: false, error: message };
+      // Log full error server-side but never expose raw upstream response to the client
+      this.logger.error(`AI API test failed for connection ${connectionId}: ${err instanceof Error ? err.message : String(err)}`);
+      const isAuthErr = err instanceof Error && (err.message.includes('401') || err.message.includes('403'));
+      return { success: false, error: isAuthErr ? 'API key inválida o sin permisos' : 'Error al conectar con el proveedor de IA' };
     }
   }
 
   async processIncomingMessage(data: AiResponderJobData): Promise<void> {
-    const { connectionId, userId, chatId, incomingMessage, workerInternalIp, workerApiKey, sessionName } = data;
+    const { connectionId, userId, chatId, incomingMessage } = data;
 
     // 1. Load config — skip if not enabled or missing
     const config = await this.getConfig(connectionId, userId);
@@ -109,39 +139,32 @@ export class AiResponderService {
       return;
     }
 
-    // Resolve worker info from DB if not provided in job
-    let resolvedIp = workerInternalIp;
-    let resolvedApiKey = workerApiKey;
-    let resolvedSessionName = sessionName;
+    // Resolve worker info always from DB — never from job payload (no secrets in queue)
+    const sessions = await this.db
+      .select()
+      .from(wahaSessions)
+      .where(eq(wahaSessions.id, connectionId))
+      .limit(1);
+    const session = sessions[0];
+    if (!session) {
+      this.logger.warn(`Session ${connectionId} not found — skipping AI response`);
+      return;
+    }
+    const resolvedSessionName: string = session.sessionName;
 
-    if (!resolvedIp || !resolvedApiKey || !resolvedSessionName) {
-      const sessions = await this.db
+    let resolvedIp: string | undefined;
+    let resolvedApiKey: string | undefined;
+    if (session.workerId) {
+      const workers = await this.db
         .select()
-        .from(wahaSessions)
-        .where(eq(wahaSessions.id, connectionId))
+        .from(wahaWorkers)
+        .where(eq(wahaWorkers.id, session.workerId))
         .limit(1);
-      const session = sessions[0];
-      if (!session) {
-        this.logger.warn(`Session ${connectionId} not found — skipping AI response`);
-        return;
-      }
-      resolvedSessionName = resolvedSessionName ?? session.sessionName;
-
-      if (session.workerId) {
-        const workers = await this.db
-          .select()
-          .from(wahaWorkers)
-          .where(eq(wahaWorkers.id, session.workerId))
-          .limit(1);
-        const worker = workers[0];
-        if (worker) {
-          resolvedIp = resolvedIp ?? worker.internalIp;
-          resolvedApiKey = resolvedApiKey ?? worker.apiKeyEnc;
-        }
-      }
+      const worker = workers[0];
+      if (worker) { resolvedIp = worker.internalIp; resolvedApiKey = worker.apiKeyEnc; }
     }
 
-    if (!resolvedIp || !resolvedApiKey || !resolvedSessionName) {
+    if (!resolvedIp || !resolvedApiKey) {
       this.logger.warn(`Missing worker info for connection ${connectionId} — skipping AI response`);
       return;
     }
@@ -237,7 +260,9 @@ export class AiResponderService {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`Anthropic API error ${response.status}: ${body}`);
+      // Log full body server-side; only expose status code to callers (never the raw body)
+      this.logger.error(`Anthropic API error ${response.status} for connection (body redacted)`);
+      throw new Error(`Anthropic API error ${response.status}`);
     }
 
     const data = await response.json() as any;
@@ -268,7 +293,9 @@ export class AiResponderService {
 
     if (!response.ok) {
       const body = await response.text();
-      throw new Error(`OpenAI API error ${response.status}: ${body}`);
+      // Log full body server-side; only expose status code to callers (never the raw body)
+      this.logger.error(`OpenAI API error ${response.status} for connection (body redacted)`);
+      throw new Error(`OpenAI API error ${response.status}`);
     }
 
     const data = await response.json() as any;
