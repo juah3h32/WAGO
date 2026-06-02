@@ -15,3 +15,6 @@ TODO.md
 .env.secrets
 .env.docker
 cli/wago
+services/
+.claude/
+bannerNUEVO.png
