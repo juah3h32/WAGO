@@ -23,7 +23,7 @@ import { AiResponderModule } from "./ai-responder/ai-responder.module";
       throttlers: [
         {
           ttl: 60000,
-          limit: 60,
+          limit: 600,   // 10 req/s — dashboard polls + event ingestion
         },
       ],
     }),

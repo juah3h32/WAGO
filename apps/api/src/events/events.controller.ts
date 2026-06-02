@@ -79,7 +79,21 @@ export class EventsController {
     const sessionName: string = (event.session ?? event.instance ?? 'default') as string;
     const payload: any = event.payload ?? event.data;
 
-    this.logger.log(`Received WAHA event: ${event.event} for session: ${sessionName}`);
+    // Normalize Evolution API event names to WAHA-compatible names
+    const EVENT_MAP: Record<string, string> = {
+      'MESSAGES_UPSERT':    'message',
+      'MESSAGES_UPDATE':    'message.ack',
+      'MESSAGES_DELETE':    'message.revoked',
+      'SEND_MESSAGE':       'message',
+      'CONNECTION_UPDATE':  'session.status',
+      'QRCODE_UPDATED':     'session.status',
+      'PRESENCE_UPDATE':    'presence.update',
+      'GROUPS_UPSERT':      'group.join',
+      'GROUP_PARTICIPANTS_UPDATE': 'group.leave',
+    };
+    const normalizedEvent = EVENT_MAP[event.event] ?? event.event;
+
+    this.logger.log(`Received event: ${event.event} → ${normalizedEvent} for session: ${sessionName}`);
 
     // 1. Look up the session using workerId (always present after validation above)
     let session: any;
@@ -113,7 +127,7 @@ export class EventsController {
 
     // 1b. If this is an incoming text message, enqueue an AI auto-response job (fire-and-forget)
     if (
-      (event.event === 'messages.upsert' || event.event === 'message') &&
+      (normalizedEvent === 'message' || event.event === 'messages.upsert' || event.event === 'message') &&
       payload?.key?.fromMe === false &&
       payload?.message
     ) {
@@ -210,15 +224,17 @@ export class EventsController {
         ),
       );
 
-    // 3. Filter configs whose events array contains the event type
+    // 3. Filter configs — match normalized event name OR original
     const matchingConfigs = configs.filter(
       (config: { events: string[] }) =>
-        config.events.includes('*') || config.events.includes(event.event),
+        config.events.includes('*') ||
+        config.events.includes(normalizedEvent) ||
+        config.events.includes(event.event),
     );
 
     if (matchingConfigs.length === 0) {
       this.logger.debug(
-        `No matching webhook configs for event ${event.event} on session ${session.id}`,
+        `No matching webhook configs for event ${event.event} (normalized: ${normalizedEvent}) on session ${session.id}`,
       );
       return { received: true };
     }
@@ -229,7 +245,7 @@ export class EventsController {
         .insert(webhookEventLogs)
         .values({
           webhookConfigId: config.id,
-          eventType: event.event,
+          eventType: normalizedEvent,
           payload: rewrittenEvent,
           status: 'pending',
         })
@@ -239,14 +255,14 @@ export class EventsController {
         webhookConfigId: config.id,
         url: config.url,
         signingSecret: config.signingSecret,
-        eventType: event.event,
+        eventType: normalizedEvent,
         payload: rewrittenEvent,
         sessionId: session.id,
         logId: log.id,
       });
 
       this.logger.log(
-        `Enqueued webhook delivery ${log.id} to ${config.url} for event ${event.event}`,
+        `Enqueued webhook delivery ${log.id} to ${config.url} for event ${normalizedEvent}`,
       );
     }
 

@@ -42,7 +42,7 @@ function ConnectionsPageContent() {
   const { data: connections, loading, error, mutate } = useApiData<Connection[]>(
     "connections",
     () => apiFetch("/api/connections"),
-    { revalidateInterval: 4_000 }
+    { revalidateInterval: 10_000 }
   );
   const list = connections ?? [];
   const { toast } = useToast();
@@ -84,7 +84,7 @@ function ConnectionsPageContent() {
       }
     };
     poll();
-    const t = setInterval(poll, 2500);
+    const t = setInterval(poll, 5000);
     return () => { alive = false; clearInterval(t); };
   }, [newConnId]);
 
@@ -416,7 +416,7 @@ function ConnectionDetailModal({
     }
 
     tick();
-    const t = setInterval(tick, 2500);
+    const t = setInterval(tick, 4000);
     return () => { alive = false; clearInterval(t); if (countdown) clearInterval(countdown); };
   }, [conn.id]);
 
@@ -905,7 +905,7 @@ function AiResponderTab({ connectionId }: { connectionId: string }) {
         .catch(() => {});
     };
     poll();
-    const t = setInterval(poll, 4000);
+    const t = setInterval(poll, 10000);
     return () => { alive = false; clearInterval(t); };
   }, [connectionId]);
 

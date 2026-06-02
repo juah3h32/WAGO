@@ -138,7 +138,7 @@ function ConnectionDetailPageContent() {
     }
 
     tick();
-    const t = setInterval(tick, 2500);
+    const t = setInterval(tick, 4000);
     return () => { cancelled.v = true; clearInterval(t); if (countdown) clearInterval(countdown); };
   }, [id, loadProfile]);
 
