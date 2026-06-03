@@ -69,9 +69,9 @@ services:
       REDIS_PREFIX_KEY: evolution
       LOG_LEVEL: WARN
       WEBHOOK_GLOBAL_ENABLED: "false"
-      CONFIG_SESSION_PHONE_CLIENT: "Ubuntu"
+      CONFIG_SESSION_PHONE_CLIENT: "Chrome"
       CONFIG_SESSION_PHONE_NAME: "Chrome"
-      CONFIG_SESSION_PHONE_VERSION: ""
+      CONFIG_SESSION_PHONE_VERSION: "2.3000.1040748867"
     volumes:
       - evolution-sessions:/evolution/instances
     networks:
